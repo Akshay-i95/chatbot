@@ -1,0 +1,22 @@
+# Use precompiled wheels only (no source compilation needed)
+--only-binary=all
+
+# Core dependencies
+azure-storage-blob
+python-dotenv
+tqdm
+psutil
+
+# PDF processing (lightweight)
+PyPDF2
+pdfplumber
+
+# Text processing
+tiktoken
+
+# AI/ML (use CPU versions with precompiled wheels)
+numpy
+pandas
+torch --index-url https://download.pytorch.org/whl/cpu
+sentence-transformers
+chromadb
