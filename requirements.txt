@@ -11,6 +11,16 @@ psutil
 PyPDF2
 pdfplumber
 
+# Enhanced PDF processing (Phase 2)
+PyMuPDF  # fitz for advanced PDF features
+pytesseract  # OCR functionality
+Pillow  # Image processing for OCR
+pikepdf  # PDF repair and validation
+
+# Streamlit web interface (Phase 4)
+streamlit>=1.28.0
+openai>=1.0.0  # For OpenRouter API integration
+
 # Text processing
 tiktoken
 
@@ -20,3 +30,9 @@ pandas
 torch --index-url https://download.pytorch.org/whl/cpu
 sentence-transformers
 chromadb
+
+# Optional: Alternative vector databases
+# faiss-cpu  # Uncomment if using FAISS instead of ChromaDB
+
+# Optional: LLM integration
+# openai  # Uncomment if using OpenAI API for responses

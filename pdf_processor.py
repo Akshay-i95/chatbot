@@ -1,25 +1,45 @@
 """
-PDF Stream Processor - Intelligent streaming and parsing of PDF files from Azure Blob Storage
+Enhanced PDF Processor - Phase 2 Implementation
+Handles OCR, complex layouts, image extraction, and file validation
 
-This module handles:
-- Streaming PDFs from Azure Blob Storage without downloading
-- Concurrent processing with intelligent batching
-- Memory-efficient text extraction
-- Chunking with overlap for better context
+This module provides:
+- OCR integration for scanned PDFs (Tesseract)
+- Advanced PDF parsing for complex layouts
+- Image-to-text extraction for diagram-heavy documents  
+- File validation & repair mechanisms
+- Chunk-level processing for AI chatbot foundation
 """
 
-import asyncio
 import io
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Generator, Tuple, Optional
+import os
+import tempfile
+from typing import List, Dict, Tuple, Optional, Any
+from pathlib import Path
 import numpy as np
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # PDF Processing
 import PyPDF2
 import pdfplumber
+import fitz  # PyMuPDF for advanced features
+
+# OCR and Image Processing
+try:
+    import pytesseract
+    from PIL import Image
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+
+# File validation and repair
+try:
+    import pikepdf
+    PIKEPDF_AVAILABLE = True
+except ImportError:
+    PIKEPDF_AVAILABLE = False
 
 # Azure Blob Storage
 from azure.storage.blob import BlobServiceClient
@@ -29,182 +49,184 @@ from azure.core.exceptions import AzureError
 import tiktoken
 import re
 
-class PDFStreamProcessor:
+class EnhancedPDFProcessor:
     def __init__(self, config: Dict):
+        """Initialize the enhanced PDF processor with OCR and validation capabilities"""
         try:
             self.config = config
             
-            # Validate and set configuration with proper error handling
-            self.max_workers = max(1, min(int(config.get('max_workers', 8)), 16))  # Limit workers
+            # Configuration parameters
+            self.max_workers = max(1, min(int(config.get('max_workers', 4)), 8))  # Reduced for OCR
             self.chunk_size = max(100, int(config.get('chunk_size', 1000)))
             self.chunk_overlap = max(0, min(int(config.get('chunk_overlap', 200)), self.chunk_size // 2))
-            self.batch_size = max(1, int(config.get('batch_size', 50)))
+            self.batch_size = max(1, int(config.get('batch_size', 20)))  # Reduced for OCR processing
             self.max_memory_mb = max(512, int(config.get('max_memory_mb', 2048)))
             self.min_chunk_length = max(50, int(config.get('min_chunk_length', 100)))
             self.max_chunk_length = max(self.chunk_size, int(config.get('max_chunk_length', 2000)))
             
-            # Initialize tokenizer with error handling
-            try:
-                self.tokenizer = tiktoken.get_encoding("cl100k_base")
-            except Exception as e:
-                self.logger.warning(f"⚠️ Failed to load tiktoken, using basic chunking: {str(e)}")
-                self.tokenizer = None
+            # OCR Configuration
+            self.enable_ocr = config.get('enable_ocr', True) and OCR_AVAILABLE
+            self.ocr_language = config.get('ocr_language', 'eng')
+            self.ocr_dpi = int(config.get('ocr_dpi', 300))
+            self.image_to_text = config.get('image_to_text', True)
+            
+            # File validation
+            self.enable_repair = config.get('enable_repair', True) and PIKEPDF_AVAILABLE
+            self.max_file_size_mb = int(config.get('max_file_size_mb', 100))
             
             # Setup logging
             self.logger = logging.getLogger(__name__)
             
-            # Validate configuration
-            self._validate_config()
-            
-        except Exception as e:
-            raise ValueError(f"Failed to initialize PDFStreamProcessor: {str(e)}")
-    
-    def _validate_config(self):
-        """Validate configuration parameters"""
-        if self.chunk_overlap >= self.chunk_size:
-            raise ValueError("chunk_overlap must be less than chunk_size")
-        
-        if self.min_chunk_length > self.max_chunk_length:
-            raise ValueError("min_chunk_length must be less than max_chunk_length")
-        
-        self.logger.info(f"✅ PDFStreamProcessor initialized with {self.max_workers} workers, batch size {self.batch_size}")
-        
-    def estimate_memory_usage(self, file_size_mb: float) -> float:
-        """Estimate memory usage for processing a PDF file"""
-        # Rough estimate: 3x file size for processing overhead
-        return file_size_mb * 3
-    
-    def stream_pdf_from_blob(self, container_client, blob_name: str) -> Tuple[Optional[io.BytesIO], Optional[Dict]]:
-        """Stream PDF content from Azure Blob Storage without downloading to disk"""
-        if not blob_name or not blob_name.lower().endswith('.pdf'):
-            self.logger.error(f"❌ Invalid PDF file name: {blob_name}")
-            return None, None
-            
-        try:
-            blob_client = container_client.get_blob_client(blob_name)
-            
-            # Get blob properties first with timeout
+            # Initialize tokenizer
             try:
-                properties = blob_client.get_blob_properties()
+                self.tokenizer = tiktoken.get_encoding("cl100k_base")
             except Exception as e:
-                self.logger.error(f"❌ Failed to get properties for {blob_name}: {str(e)}")
-                return None, None
+                self.logger.warning(f"⚠️ Failed to load tiktoken: {str(e)}")
+                self.tokenizer = None
             
-            file_size_mb = properties.size / (1024 * 1024)
+            # Statistics tracking
+            self.stats = {
+                'total_files': 0,
+                'successful_extractions': 0,
+                'ocr_extractions': 0,
+                'repair_attempts': 0,
+                'failed_files': 0,
+                'chunks_created': 0
+            }
             
-            # Validate file size
-            if properties.size == 0:
-                self.logger.warning(f"⚠️ File {blob_name} is empty")
-                return None, None
+            self._validate_dependencies()
+            self.logger.info(f"✅ Enhanced PDF Processor initialized with OCR: {self.enable_ocr}")
             
-            if file_size_mb > 100:  # Limit to 100MB per file
-                self.logger.warning(f"⚠️ File {blob_name} ({file_size_mb:.1f}MB) exceeds size limit")
-                return None, None
-            
-            # Check memory constraints
-            estimated_memory = self.estimate_memory_usage(file_size_mb)
-            if estimated_memory > self.max_memory_mb:
-                self.logger.warning(f"⚠️ File {blob_name} ({file_size_mb:.1f}MB) may exceed memory limit")
-                return None, None
-            
-            # Stream the blob content with timeout and retry
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    blob_data = blob_client.download_blob()
-                    pdf_stream = io.BytesIO()
-                    
-                    # Stream in chunks to manage memory
-                    chunk_size = 8192  # 8KB chunks
-                    total_read = 0
-                    
-                    for chunk in blob_data.chunks():
-                        if not chunk:
-                            break
-                        pdf_stream.write(chunk)
-                        total_read += len(chunk)
-                        
-                        # Safety check for runaway downloads
-                        if total_read > 100 * 1024 * 1024:  # 100MB limit
-                            raise Exception("File size exceeded during download")
-                    
-                    pdf_stream.seek(0)
-                    
-                    # Verify we got a valid PDF stream
-                    if pdf_stream.getvalue()[:4] != b'%PDF':
-                        raise Exception("Downloaded content is not a valid PDF")
-                    
-                    return pdf_stream, properties
-                    
-                except Exception as e:
-                    if attempt < max_retries - 1:
-                        self.logger.warning(f"⚠️ Attempt {attempt + 1} failed for {blob_name}: {str(e)}, retrying...")
-                        time.sleep(1)
-                    else:
-                        raise e
-            
-        except AzureError as e:
-            self.logger.error(f"❌ Azure error streaming {blob_name}: {str(e)}")
-            return None, None
         except Exception as e:
-            self.logger.error(f"❌ Unexpected error streaming {blob_name}: {str(e)}")
-            return None, None
+            raise ValueError(f"Failed to initialize EnhancedPDFProcessor: {str(e)}")
     
-    def extract_text_from_pdf_stream(self, pdf_stream: io.BytesIO, blob_name: str) -> Tuple[str, Dict]:
-        """Extract text from PDF stream using multiple methods for robustness"""
+    def _validate_dependencies(self):
+        """Validate OCR and other dependencies"""
+        if self.enable_ocr and not OCR_AVAILABLE:
+            self.logger.warning("⚠️ OCR requested but dependencies not available. Install: pip install pytesseract pillow")
+            self.enable_ocr = False
+        
+        if self.enable_ocr:
+            try:
+                # Test Tesseract installation
+                version = pytesseract.get_tesseract_version()
+                self.logger.info(f"✅ Tesseract OCR available: {version}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Tesseract not properly installed: {str(e)}")
+                self.enable_ocr = False
+        
+        if self.enable_repair and not PIKEPDF_AVAILABLE:
+            self.logger.warning("⚠️ PDF repair requested but pikepdf not available. Install: pip install pikepdf")
+            self.enable_repair = False
+    
+    def validate_and_repair_pdf(self, pdf_stream: io.BytesIO, blob_name: str) -> Tuple[io.BytesIO, bool]:
+        """Validate and attempt to repair corrupted PDF files"""
+        repaired = False
+        
+        try:
+            # First, try to read with PyPDF2 for basic validation
+            pdf_stream.seek(0)
+            reader = PyPDF2.PdfReader(pdf_stream)
+            
+            # Check if we can access pages
+            num_pages = len(reader.pages)
+            if num_pages == 0:
+                raise Exception("PDF has no pages")
+            
+            # Try to read first page to validate - but handle warnings
+            first_page = reader.pages[0]
+            
+            # Suppress common PDF warnings that don't affect processing
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning)
+                warnings.filterwarnings("ignore", message=".*Cannot set gray.*")
+                warnings.filterwarnings("ignore", message=".*invalid float value.*")
+                _ = first_page.extract_text()
+            
+            self.logger.debug(f"✅ PDF validation passed for {blob_name} ({num_pages} pages)")
+            pdf_stream.seek(0)
+            return pdf_stream, repaired
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ PDF validation failed for {blob_name}: {str(e)}")
+            
+            if self.enable_repair:
+                try:
+                    self.stats['repair_attempts'] += 1
+                    self.logger.info(f"🔧 Attempting to repair {blob_name}")
+                    
+                    # Save to temporary file for pikepdf
+                    pdf_stream.seek(0)
+                    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
+                        temp_file.write(pdf_stream.getvalue())
+                        temp_path = temp_file.name
+                    
+                    try:
+                        # Use pikepdf to repair
+                        with pikepdf.open(temp_path, allow_overwriting_input=True) as pdf:
+                            repaired_stream = io.BytesIO()
+                            pdf.save(repaired_stream)
+                            repaired_stream.seek(0)
+                            repaired = True
+                            
+                            self.logger.info(f"✅ Successfully repaired {blob_name}")
+                            return repaired_stream, repaired
+                    finally:
+                        # Clean up temp file
+                        os.unlink(temp_path)
+                        
+                except Exception as repair_error:
+                    self.logger.error(f"❌ Failed to repair {blob_name}: {str(repair_error)}")
+            
+            pdf_stream.seek(0)
+            return pdf_stream, repaired
+    
+    def extract_text_with_ocr(self, pdf_stream: io.BytesIO, blob_name: str) -> Tuple[str, Dict]:
+        """Extract text using multiple methods including OCR for scanned documents"""
         text_content = ""
         metadata = {
             'filename': blob_name,
             'pages': 0,
             'extraction_method': 'none',
             'processing_time': 0,
+            'ocr_used': False,
+            'images_processed': 0,
             'file_size_mb': 0
         }
         
         start_time = time.time()
         
         try:
-            # Method 1: Try pdfplumber first (better text extraction)
-            pdf_stream.seek(0)
-            with pdfplumber.open(pdf_stream) as pdf:
-                pages_text = []
-                for page_num, page in enumerate(pdf.pages):
-                    try:
-                        page_text = page.extract_text()
-                        if page_text:
-                            pages_text.append(page_text)
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Error extracting page {page_num} from {blob_name}: {str(e)}")
-                
-                if pages_text:
-                    text_content = "\n\n".join(pages_text)
-                    metadata['pages'] = len(pdf.pages)
-                    metadata['extraction_method'] = 'pdfplumber'
-                    
-        except Exception as e:
-            self.logger.warning(f"⚠️ pdfplumber failed for {blob_name}: {str(e)}")
+            # First, validate and potentially repair the PDF
+            pdf_stream, was_repaired = self.validate_and_repair_pdf(pdf_stream, blob_name)
+            if was_repaired:
+                metadata['repaired'] = True
             
-            # Method 2: Fallback to PyPDF2
-            try:
-                pdf_stream.seek(0)
-                pdf_reader = PyPDF2.PdfReader(pdf_stream)
-                pages_text = []
+            # Method 1: Try standard text extraction first
+            text_content, basic_metadata = self._extract_standard_text(pdf_stream, blob_name)
+            metadata.update(basic_metadata)
+            
+            # If standard extraction yields minimal text, try OCR
+            if (len(text_content.strip()) < 100 and self.enable_ocr):
+                self.logger.info(f"🔍 Standard extraction yielded minimal text for {blob_name}, trying OCR")
+                ocr_text, ocr_metadata = self._extract_with_ocr(pdf_stream, blob_name)
                 
-                for page_num, page in enumerate(pdf_reader.pages):
-                    try:
-                        page_text = page.extract_text()
-                        if page_text:
-                            pages_text.append(page_text)
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Error extracting page {page_num} from {blob_name}: {str(e)}")
-                
-                if pages_text:
-                    text_content = "\n\n".join(pages_text)
-                    metadata['pages'] = len(pdf_reader.pages)
-                    metadata['extraction_method'] = 'PyPDF2'
-                    
-            except Exception as e:
-                self.logger.error(f"❌ Both extraction methods failed for {blob_name}: {str(e)}")
+                if len(ocr_text.strip()) > len(text_content.strip()):
+                    text_content = ocr_text
+                    metadata.update(ocr_metadata)
+                    metadata['ocr_used'] = True
+                    self.stats['ocr_extractions'] += 1
+            
+            # Extract images and convert to text if enabled
+            if self.image_to_text and self.enable_ocr:
+                image_text, image_count = self._extract_images_to_text(pdf_stream, blob_name)
+                if image_text.strip():
+                    text_content += "\n\n--- IMAGE CONTENT ---\n" + image_text
+                    metadata['images_processed'] = image_count
+            
+        except Exception as e:
+            self.logger.error(f"❌ Complete extraction failed for {blob_name}: {str(e)}")
         
         # Clean and normalize text
         if text_content:
@@ -215,25 +237,238 @@ class PDFStreamProcessor:
         
         return text_content, metadata
     
+    def _extract_standard_text(self, pdf_stream: io.BytesIO, blob_name: str) -> Tuple[str, Dict]:
+        """Extract text using standard methods (pdfplumber, PyPDF2)"""
+        text_content = ""
+        metadata = {'extraction_method': 'none', 'pages': 0}
+        
+        # Method 1: pdfplumber (best for structured text) with warning suppression
+        try:
+            pdf_stream.seek(0)
+            
+            # Suppress common pdfminer warnings that don't affect extraction
+            import warnings
+            import logging
+            
+            # Temporarily reduce pdfminer logging level to avoid spam
+            pdfminer_logger = logging.getLogger('pdfminer')
+            original_level = pdfminer_logger.level
+            pdfminer_logger.setLevel(logging.ERROR)
+            
+            try:
+                with pdfplumber.open(pdf_stream) as pdf:
+                    pages_text = []
+                    for page_num, page in enumerate(pdf.pages):
+                        try:
+                            with warnings.catch_warnings():
+                                warnings.filterwarnings("ignore")
+                                page_text = page.extract_text()
+                                if page_text and page_text.strip():
+                                    pages_text.append(page_text)
+                        except Exception as e:
+                            self.logger.debug(f"⚠️ Page {page_num} extraction issue in {blob_name}: {str(e)}")
+                    
+                    if pages_text:
+                        text_content = "\n\n".join(pages_text)
+                        metadata['pages'] = len(pdf.pages)
+                        metadata['extraction_method'] = 'pdfplumber'
+                        return text_content, metadata
+            finally:
+                # Restore original logging level
+                pdfminer_logger.setLevel(original_level)
+        
+        except Exception as e:
+            self.logger.warning(f"⚠️ pdfplumber failed for {blob_name}: {str(e)}")
+        
+        # Method 2: PyMuPDF (better for complex layouts)
+        try:
+            pdf_stream.seek(0)
+            pdf_doc = fitz.open(stream=pdf_stream.getvalue(), filetype="pdf")
+            pages_text = []
+            
+            for page_num in range(pdf_doc.page_count):
+                try:
+                    page = pdf_doc[page_num]
+                    page_text = page.get_text()
+                    if page_text and page_text.strip():
+                        pages_text.append(page_text)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Error extracting page {page_num} with PyMuPDF: {str(e)}")
+            
+            pdf_doc.close()
+            
+            if pages_text:
+                text_content = "\n\n".join(pages_text)
+                metadata['pages'] = pdf_doc.page_count
+                metadata['extraction_method'] = 'PyMuPDF'
+                return text_content, metadata
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ PyMuPDF failed for {blob_name}: {str(e)}")
+        
+        # Method 3: PyPDF2 (fallback)
+        try:
+            pdf_stream.seek(0)
+            pdf_reader = PyPDF2.PdfReader(pdf_stream)
+            pages_text = []
+            
+            for page_num, page in enumerate(pdf_reader.pages):
+                try:
+                    page_text = page.extract_text()
+                    if page_text and page_text.strip():
+                        pages_text.append(page_text)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Error extracting page {page_num} with PyPDF2: {str(e)}")
+            
+            if pages_text:
+                text_content = "\n\n".join(pages_text)
+                metadata['pages'] = len(pdf_reader.pages)
+                metadata['extraction_method'] = 'PyPDF2'
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ PyPDF2 failed for {blob_name}: {str(e)}")
+        
+        return text_content, metadata
+    
+    def _extract_with_ocr(self, pdf_stream: io.BytesIO, blob_name: str) -> Tuple[str, Dict]:
+        """Extract text using OCR for scanned documents"""
+        if not self.enable_ocr:
+            return "", {}
+        
+        text_content = ""
+        metadata = {'extraction_method': 'OCR', 'pages': 0}
+        
+        try:
+            pdf_stream.seek(0)
+            pdf_doc = fitz.open(stream=pdf_stream.getvalue(), filetype="pdf")
+            pages_text = []
+            
+            self.logger.info(f"🔍 Starting OCR processing for {blob_name} ({pdf_doc.page_count} pages)")
+            
+            for page_num in range(min(pdf_doc.page_count, 50)):  # Limit OCR to 50 pages
+                try:
+                    page = pdf_doc[page_num]
+                    
+                    # Convert page to image
+                    pix = page.get_pixmap(matrix=fitz.Matrix(self.ocr_dpi/72, self.ocr_dpi/72))
+                    img_data = pix.tobytes("png")
+                    image = Image.open(io.BytesIO(img_data))
+                    
+                    # Apply OCR
+                    page_text = pytesseract.image_to_string(
+                        image, 
+                        lang=self.ocr_language,
+                        config='--psm 6'  # Assume uniform block of text
+                    )
+                    
+                    if page_text and page_text.strip():
+                        pages_text.append(page_text)
+                    
+                    # Memory cleanup
+                    image.close()
+                    pix = None
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ OCR failed for page {page_num} in {blob_name}: {str(e)}")
+                    continue
+            
+            pdf_doc.close()
+            
+            if pages_text:
+                text_content = "\n\n".join(pages_text)
+                metadata['pages'] = len(pages_text)
+                
+                self.logger.info(f"✅ OCR extracted {len(text_content)} characters from {blob_name}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ OCR processing failed for {blob_name}: {str(e)}")
+        
+        return text_content, metadata
+    
+    def _extract_images_to_text(self, pdf_stream: io.BytesIO, blob_name: str) -> Tuple[str, int]:
+        """Extract images from PDF and convert to text using OCR"""
+        if not self.enable_ocr:
+            return "", 0
+        
+        image_text = ""
+        image_count = 0
+        
+        try:
+            pdf_stream.seek(0)
+            pdf_doc = fitz.open(stream=pdf_stream.getvalue(), filetype="pdf")
+            
+            for page_num in range(min(pdf_doc.page_count, 20)):  # Limit to 20 pages for images
+                page = pdf_doc[page_num]
+                image_list = page.get_images()
+                
+                for img_index, img in enumerate(image_list):
+                    try:
+                        # Extract image
+                        xref = img[0]
+                        base_image = pdf_doc.extract_image(xref)
+                        image_bytes = base_image["image"]
+                        
+                        # Convert to PIL Image
+                        image = Image.open(io.BytesIO(image_bytes))
+                        
+                        # Skip very small images (likely decorative)
+                        if image.width < 100 or image.height < 100:
+                            continue
+                        
+                        # Apply OCR to image
+                        img_text = pytesseract.image_to_string(
+                            image,
+                            lang=self.ocr_language,
+                            config='--psm 6'
+                        )
+                        
+                        if img_text and len(img_text.strip()) > 20:  # Only meaningful text
+                            image_text += f"\n--- Image {image_count + 1} (Page {page_num + 1}) ---\n"
+                            image_text += img_text.strip() + "\n"
+                            image_count += 1
+                        
+                        image.close()
+                        
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Failed to process image {img_index} on page {page_num}: {str(e)}")
+                        continue
+            
+            pdf_doc.close()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Image extraction failed for {blob_name}: {str(e)}")
+        
+        return image_text, image_count
+    
     def clean_text(self, text: str) -> str:
-        """Clean and normalize extracted text"""
+        """Enhanced text cleaning for better chunking"""
         if not text:
             return ""
         
-        # Remove excessive whitespace
-        text = re.sub(r'\s+', ' ', text)
+        # Remove excessive whitespace while preserving paragraph breaks
+        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)  # Multiple line breaks to double
+        text = re.sub(r'[ \t]+', ' ', text)  # Multiple spaces/tabs to single space
         
-        # Remove special characters but keep basic punctuation
-        text = re.sub(r'[^\w\s\.,;:!?()-]', '', text)
+        # Remove page numbers and headers/footers (common patterns)
+        text = re.sub(r'\n\d+\s*\n', '\n', text)  # Standalone page numbers
+        text = re.sub(r'\n(?:Page \d+|P\.\d+)\n', '\n', text)  # Page markers
+        
+        # Fix common OCR errors
+        text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)  # Missing spaces between words
+        text = re.sub(r'\b(\w)\s+(\w)\b', r'\1\2', text)  # Extra spaces in words (OCR artifact)
         
         # Remove very short lines (likely formatting artifacts)
         lines = text.split('\n')
-        cleaned_lines = [line.strip() for line in lines if len(line.strip()) > 10]
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            if len(line) > 3:  # Keep lines with more than 3 characters
+                cleaned_lines.append(line)
         
         return '\n'.join(cleaned_lines).strip()
     
-    def create_intelligent_chunks(self, text: str, metadata: Dict) -> List[Dict]:
-        """Create intelligent text chunks with overlap and context preservation"""
+    def create_smart_chunks(self, text: str, metadata: Dict) -> List[Dict]:
+        """Create intelligent chunks optimized for AI retrieval (Phase 3)"""
         if not text or len(text.strip()) < self.min_chunk_length:
             return []
         
@@ -241,205 +476,305 @@ class PDFStreamProcessor:
         text = text.strip()
         
         try:
-            # Split by paragraphs first to preserve context
-            paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+            # Split by sections first (headers, major breaks)
+            sections = self._split_by_sections(text)
             
-            if not paragraphs:
-                return []
-            
-            current_chunk = ""
-            current_tokens = 0
-            
-            for para in paragraphs:
-                try:
-                    # Calculate tokens with fallback
-                    if self.tokenizer:
-                        para_tokens = len(self.tokenizer.encode(para))
-                    else:
-                        para_tokens = len(para) // 4  # Rough estimate
-                    
-                    # If paragraph alone exceeds chunk size, split it
-                    if para_tokens > self.chunk_size:
-                        # Save current chunk if it has content
-                        if current_chunk and len(current_chunk) >= self.min_chunk_length:
-                            chunks.append(self.create_chunk_metadata(current_chunk, metadata, len(chunks)))
-                            current_chunk = ""
-                            current_tokens = 0
-                        
-                        # Split large paragraph into smaller chunks
-                        sentences = self._split_into_sentences(para)
-                        temp_chunk = ""
-                        temp_tokens = 0
-                        
-                        for sentence in sentences:
-                            sentence = sentence.strip()
-                            if not sentence:
-                                continue
-                            
-                            if self.tokenizer:
-                                sentence_tokens = len(self.tokenizer.encode(sentence))
-                            else:
-                                sentence_tokens = len(sentence) // 4
-                            
-                            if temp_tokens + sentence_tokens > self.chunk_size and temp_chunk:
-                                if len(temp_chunk) >= self.min_chunk_length:
-                                    chunks.append(self.create_chunk_metadata(temp_chunk, metadata, len(chunks)))
-                                
-                                # Add overlap
-                                overlap_text = temp_chunk[-self.chunk_overlap:] if len(temp_chunk) > self.chunk_overlap else temp_chunk
-                                temp_chunk = overlap_text + ". " + sentence
-                                temp_tokens = len(self.tokenizer.encode(temp_chunk)) if self.tokenizer else len(temp_chunk) // 4
-                            else:
-                                temp_chunk += ". " + sentence if temp_chunk else sentence
-                                temp_tokens += sentence_tokens
-                        
-                        if temp_chunk and len(temp_chunk) >= self.min_chunk_length:
-                            chunks.append(self.create_chunk_metadata(temp_chunk, metadata, len(chunks)))
-                    
-                    # Normal paragraph processing
-                    elif current_tokens + para_tokens > self.chunk_size and current_chunk:
-                        if len(current_chunk) >= self.min_chunk_length:
-                            chunks.append(self.create_chunk_metadata(current_chunk, metadata, len(chunks)))
-                        
-                        # Add overlap from previous chunk
-                        if chunks and current_chunk:
-                            overlap_text = current_chunk[-self.chunk_overlap:] if len(current_chunk) > self.chunk_overlap else current_chunk
-                            current_chunk = overlap_text + "\n\n" + para
-                            current_tokens = len(self.tokenizer.encode(current_chunk)) if self.tokenizer else len(current_chunk) // 4
-                        else:
-                            current_chunk = para
-                            current_tokens = para_tokens
-                    else:
-                        current_chunk += "\n\n" + para if current_chunk else para
-                        current_tokens += para_tokens
-                        
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Error processing paragraph: {str(e)}")
+            for section_idx, section in enumerate(sections):
+                if len(section.strip()) < self.min_chunk_length:
                     continue
+                
+                # Split section into semantic chunks
+                section_chunks = self._create_semantic_chunks(section, metadata, section_idx)
+                chunks.extend(section_chunks)
             
-            # Add the last chunk
-            if current_chunk and len(current_chunk) >= self.min_chunk_length:
-                chunks.append(self.create_chunk_metadata(current_chunk, metadata, len(chunks)))
+            # Add chunk relationships and context
+            for i, chunk in enumerate(chunks):
+                chunk['chunk_id'] = f"{metadata['filename']}_{i:03d}"
+                chunk['total_chunks'] = len(chunks)
+                chunk['chunk_index'] = i
+                
+                # Add context from neighboring chunks
+                if i > 0:
+                    chunk['previous_chunk_preview'] = chunks[i-1]['text'][:100] + "..."
+                if i < len(chunks) - 1:
+                    chunk['next_chunk_preview'] = chunks[i+1]['text'][:100] + "..."
             
-            # Validate chunks
-            valid_chunks = []
-            for chunk in chunks:
-                if (chunk.get('text') and 
-                    len(chunk['text'].strip()) >= self.min_chunk_length and
-                    len(chunk['text']) <= self.max_chunk_length):
-                    valid_chunks.append(chunk)
-            
-            return valid_chunks
+            self.stats['chunks_created'] += len(chunks)
+            return chunks
             
         except Exception as e:
             self.logger.error(f"❌ Error creating chunks: {str(e)}")
             return []
     
-    def _split_into_sentences(self, text: str) -> List[str]:
-        """Split text into sentences with better handling"""
-        try:
-            # Simple sentence splitting with multiple delimiters
-            sentences = re.split(r'[.!?]+\s+', text)
-            return [s.strip() for s in sentences if s.strip()]
-        except Exception:
-            # Fallback to word-based splitting
-            words = text.split()
-            sentences = []
-            current = []
-            for word in words:
-                current.append(word)
-                if len(' '.join(current)) > 100:  # Rough sentence length
-                    sentences.append(' '.join(current))
-                    current = []
-            if current:
-                sentences.append(' '.join(current))
-            return sentences
+    def _split_by_sections(self, text: str) -> List[str]:
+        """Split text into logical sections based on headers and content breaks"""
+        # Look for section headers (various patterns)
+        section_patterns = [
+            r'\n\s*(?:[IVX]+\.|\d+\.)\s+[A-Z][^\n]{10,}\n',  # Numbered/Roman sections
+            r'\n\s*[A-Z][A-Z\s]{5,}\n',  # ALL CAPS headers
+            r'\n\s*Chapter\s+\d+[^\n]*\n',  # Chapter headers
+            r'\n\s*Section\s+\d+[^\n]*\n',  # Section headers
+        ]
+        
+        # Find section breaks
+        section_breaks = [0]
+        for pattern in section_patterns:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
+                section_breaks.append(match.start())
+        
+        # Add paragraph breaks as potential section breaks
+        paragraph_breaks = [m.start() for m in re.finditer(r'\n\s*\n\s*[A-Z]', text)]
+        section_breaks.extend(paragraph_breaks)
+        
+        # Remove duplicates and sort
+        section_breaks = sorted(list(set(section_breaks)))
+        section_breaks.append(len(text))
+        
+        # Create sections
+        sections = []
+        for i in range(len(section_breaks) - 1):
+            start = section_breaks[i]
+            end = section_breaks[i + 1]
+            section = text[start:end].strip()
+            if len(section) > 50:  # Only meaningful sections
+                sections.append(section)
+        
+        return sections if sections else [text]
     
-    def create_chunk_metadata(self, chunk_text: str, file_metadata: Dict, chunk_index: int) -> Dict:
-        """Create comprehensive metadata for a text chunk"""
+    def _create_semantic_chunks(self, section: str, metadata: Dict, section_idx: int) -> List[Dict]:
+        """Create semantically meaningful chunks from a section"""
+        chunks = []
+        
+        # Split by paragraphs
+        paragraphs = [p.strip() for p in section.split('\n\n') if p.strip()]
+        
+        current_chunk = ""
+        current_tokens = 0
+        
+        for para in paragraphs:
+            # Calculate tokens
+            if self.tokenizer:
+                para_tokens = len(self.tokenizer.encode(para))
+            else:
+                para_tokens = len(para) // 4
+            
+            # Check if adding this paragraph would exceed chunk size
+            if current_tokens + para_tokens > self.chunk_size and current_chunk:
+                # Create chunk
+                if len(current_chunk) >= self.min_chunk_length:
+                    chunk_data = self._create_chunk_with_metadata(
+                        current_chunk, metadata, len(chunks), section_idx
+                    )
+                    chunks.append(chunk_data)
+                
+                # Start new chunk with overlap
+                overlap_text = self._get_overlap_text(current_chunk)
+                current_chunk = overlap_text + "\n\n" + para if overlap_text else para
+                current_tokens = len(self.tokenizer.encode(current_chunk)) if self.tokenizer else len(current_chunk) // 4
+            else:
+                current_chunk += "\n\n" + para if current_chunk else para
+                current_tokens += para_tokens
+        
+        # Add final chunk
+        if current_chunk and len(current_chunk) >= self.min_chunk_length:
+            chunk_data = self._create_chunk_with_metadata(
+                current_chunk, metadata, len(chunks), section_idx
+            )
+            chunks.append(chunk_data)
+        
+        return chunks
+    
+    def _get_overlap_text(self, text: str) -> str:
+        """Get overlap text from the end of current chunk"""
+        if len(text) <= self.chunk_overlap:
+            return text
+        
+        # Try to break at sentence boundary
+        overlap_text = text[-self.chunk_overlap:]
+        sentence_break = overlap_text.find('. ')
+        if sentence_break > 0:
+            return overlap_text[sentence_break + 2:]
+        
+        return overlap_text
+    
+    def _create_chunk_with_metadata(self, chunk_text: str, file_metadata: Dict, chunk_index: int, section_index: int) -> Dict:
+        """Create comprehensive metadata for a chunk (Phase 3 optimization)"""
+        # Extract key information for better retrieval
+        chunk_preview = chunk_text[:200] + "..." if len(chunk_text) > 200 else chunk_text
+        
+        # Identify content type
+        content_type = "general"
+        if re.search(r'\b(?:table|figure|chart|graph)\b', chunk_text, re.IGNORECASE):
+            content_type = "data_visualization"
+        elif re.search(r'\b(?:definition|concept|theory)\b', chunk_text, re.IGNORECASE):
+            content_type = "conceptual"
+        elif re.search(r'\b(?:step|process|procedure|method)\b', chunk_text, re.IGNORECASE):
+            content_type = "procedural"
+        
         return {
+            # Core content
             'text': chunk_text,
+            'preview': chunk_preview,
+            
+            # Identification
+            'chunk_id': f"{file_metadata['filename']}_{chunk_index:03d}",
             'chunk_index': chunk_index,
+            'section_index': section_index,
+            
+            # Source metadata
             'filename': file_metadata['filename'],
-            'file_pages': file_metadata['pages'],
-            'extraction_method': file_metadata['extraction_method'],
+            'file_pages': file_metadata.get('pages', 0),
+            'extraction_method': file_metadata.get('extraction_method', 'unknown'),
+            'ocr_used': file_metadata.get('ocr_used', False),
+            'images_processed': file_metadata.get('images_processed', 0),
+            
+            # Content metadata
+            'content_type': content_type,
             'chunk_length': len(chunk_text),
-            'chunk_tokens': len(self.tokenizer.encode(chunk_text)),
-            'file_processing_time': file_metadata['processing_time']
+            'chunk_tokens': len(self.tokenizer.encode(chunk_text)) if self.tokenizer else len(chunk_text) // 4,
+            
+            # Processing metadata
+            'processing_time': file_metadata.get('processing_time', 0),
+            'created_at': time.time()
         }
     
-    def process_single_pdf(self, container_client, blob_name: str) -> List[Dict]:
-        """Process a single PDF file and return chunks with metadata"""
+    def process_single_pdf_enhanced(self, container_client, blob_name: str) -> List[Dict]:
+        """Process a single PDF with enhanced capabilities"""
         try:
+            self.stats['total_files'] += 1
+            
             # Stream PDF from blob
             pdf_stream, blob_properties = self.stream_pdf_from_blob(container_client, blob_name)
             if not pdf_stream:
+                self.stats['failed_files'] += 1
                 return []
             
-            # Extract text
-            text_content, metadata = self.extract_text_from_pdf_stream(pdf_stream, blob_name)
-            if not text_content:
-                self.logger.warning(f"⚠️ No text extracted from {blob_name}")
+            # Enhanced text extraction with OCR and validation
+            text_content, metadata = self.extract_text_with_ocr(pdf_stream, blob_name)
+            if not text_content or len(text_content.strip()) < 50:
+                self.logger.warning(f"⚠️ Minimal text extracted from {blob_name}")
+                self.stats['failed_files'] += 1
                 return []
             
             # Add blob properties to metadata
             metadata['file_size_mb'] = blob_properties.size / (1024 * 1024)
             metadata['last_modified'] = blob_properties.last_modified
             
-            # Create intelligent chunks
-            chunks = self.create_intelligent_chunks(text_content, metadata)
+            # Create smart chunks optimized for AI retrieval
+            chunks = self.create_smart_chunks(text_content, metadata)
             
-            self.logger.info(f"✅ Processed {blob_name}: {len(chunks)} chunks, {metadata['pages']} pages")
+            if chunks:
+                self.stats['successful_extractions'] += 1
+                self.logger.info(f"✅ Enhanced processing of {blob_name}: {len(chunks)} chunks, "
+                               f"{metadata['pages']} pages, OCR: {metadata.get('ocr_used', False)}")
+            else:
+                self.stats['failed_files'] += 1
+            
             return chunks
             
         except Exception as e:
-            self.logger.error(f"❌ Error processing {blob_name}: {str(e)}")
+            self.logger.error(f"❌ Enhanced processing failed for {blob_name}: {str(e)}")
+            self.stats['failed_files'] += 1
             return []
     
-    def process_pdf_batch(self, container_client, pdf_files: List[str]) -> List[Dict]:
-        """Process a batch of PDF files concurrently"""
+    def stream_pdf_from_blob(self, container_client, blob_name: str) -> Tuple[Optional[io.BytesIO], Optional[Dict]]:
+        """Stream PDF content from Azure Blob Storage (enhanced with better error handling)"""
+        if not blob_name or not blob_name.lower().endswith('.pdf'):
+            self.logger.error(f"❌ Invalid PDF file name: {blob_name}")
+            return None, None
+            
+        try:
+            blob_client = container_client.get_blob_client(blob_name)
+            
+            # Get blob properties with retry
+            properties = None
+            for attempt in range(3):
+                try:
+                    properties = blob_client.get_blob_properties()
+                    break
+                except Exception as e:
+                    if attempt == 2:
+                        self.logger.error(f"❌ Failed to get properties for {blob_name}: {str(e)}")
+                        return None, None
+                    time.sleep(1)
+            
+            file_size_mb = properties.size / (1024 * 1024)
+            
+            # Enhanced file size validation
+            if properties.size == 0:
+                self.logger.warning(f"⚠️ File {blob_name} is empty")
+                return None, None
+            
+            if file_size_mb > self.max_file_size_mb:
+                self.logger.warning(f"⚠️ File {blob_name} ({file_size_mb:.1f}MB) exceeds size limit")
+                return None, None
+            
+            # Stream with enhanced error handling
+            blob_data = blob_client.download_blob()
+            pdf_stream = io.BytesIO()
+            
+            # Stream in chunks
+            for chunk in blob_data.chunks():
+                if chunk:
+                    pdf_stream.write(chunk)
+            
+            pdf_stream.seek(0)
+            
+            # Verify PDF header
+            header = pdf_stream.read(4)
+            if header != b'%PDF':
+                self.logger.error(f"❌ {blob_name} is not a valid PDF file")
+                return None, None
+            
+            pdf_stream.seek(0)
+            return pdf_stream, properties
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error streaming {blob_name}: {str(e)}")
+            return None, None
+    
+    def process_pdf_batch_enhanced(self, container_client, pdf_files: List[str]) -> List[Dict]:
+        """Process a batch of PDFs with enhanced capabilities"""
         all_chunks = []
         
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit all tasks
+        # Reduced workers for OCR processing
+        max_workers = min(self.max_workers, 4)
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_file = {
-                executor.submit(self.process_single_pdf, container_client, pdf_file): pdf_file 
+                executor.submit(self.process_single_pdf_enhanced, container_client, pdf_file): pdf_file 
                 for pdf_file in pdf_files
             }
             
-            # Collect results with progress bar
-            with tqdm(total=len(pdf_files), desc="Processing PDFs") as pbar:
+            with tqdm(total=len(pdf_files), desc="Processing PDFs (Enhanced)") as pbar:
                 for future in as_completed(future_to_file):
                     pdf_file = future_to_file[future]
                     try:
                         chunks = future.result()
                         all_chunks.extend(chunks)
-                        pbar.set_postfix({'chunks': len(all_chunks)})
+                        pbar.set_postfix({
+                            'chunks': len(all_chunks),
+                            'success_rate': f"{(self.stats['successful_extractions']/max(1, self.stats['total_files']))*100:.1f}%"
+                        })
                     except Exception as e:
-                        self.logger.error(f"❌ Error processing {pdf_file}: {str(e)}")
+                        self.logger.error(f"❌ Batch processing error for {pdf_file}: {str(e)}")
+                        self.stats['failed_files'] += 1
                     finally:
                         pbar.update(1)
         
         return all_chunks
     
-    def process_all_pdfs(self, container_client, pdf_files: List[str]) -> Generator[List[Dict], None, None]:
-        """Process all PDF files in intelligent batches"""
-        total_files = len(pdf_files)
-        self.logger.info(f"🚀 Starting processing of {total_files} PDF files")
-        self.logger.info(f"⚙️ Configuration: {self.max_workers} workers, batch size {self.batch_size}")
-        
-        # Process in batches
-        for i in range(0, total_files, self.batch_size):
-            batch = pdf_files[i:i + self.batch_size]
-            batch_num = (i // self.batch_size) + 1
-            total_batches = (total_files + self.batch_size - 1) // self.batch_size
-            
-            self.logger.info(f"📦 Processing batch {batch_num}/{total_batches} ({len(batch)} files)")
-            
-            start_time = time.time()
-            chunks = self.process_pdf_batch(container_client, batch)
-            processing_time = time.time() - start_time
-            
-            self.logger.info(f"✅ Batch {batch_num} completed: {len(chunks)} chunks in {processing_time:.1f}s")
-            
-            yield chunks
+    def get_processing_stats(self) -> Dict:
+        """Get detailed processing statistics"""
+        total = max(1, self.stats['total_files'])
+        return {
+            'total_files_processed': self.stats['total_files'],
+            'successful_extractions': self.stats['successful_extractions'],
+            'failed_extractions': self.stats['failed_files'],
+            'success_rate_percent': (self.stats['successful_extractions'] / total) * 100,
+            'ocr_extractions': self.stats['ocr_extractions'],
+            'repair_attempts': self.stats['repair_attempts'],
+            'total_chunks_created': self.stats['chunks_created'],
+            'average_chunks_per_file': self.stats['chunks_created'] / max(1, self.stats['successful_extractions'])
+        }
