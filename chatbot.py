@@ -418,43 +418,26 @@ Context format: Each section begins with [Source: filename, Section X] followed 
         try:
             # Extract key information from context
             context_lines = context.split('\\n')
-            sources = []
             content_snippets = []
             
-            current_source = "Unknown"
             for line in context_lines:
-                if line.startswith('[Source:'):
-                    current_source = line.replace('[Source:', '').replace(']', '')
-                    if current_source not in sources:
-                        sources.append(current_source)
-                elif line.strip() and not line.startswith('---'):
-                    # Take first 100 chars of content as snippet
+                if line.strip() and not line.startswith('[Source:') and not line.startswith('---'):
+                    # Take meaningful content
                     snippet = line.strip()[:100]
-                    if snippet:
-                        content_snippets.append((current_source, snippet))
+                    if len(snippet) > 20:  # Only meaningful content
+                        content_snippets.append(snippet)
+                    if len(content_snippets) >= 2:  # Just need 2 snippets
+                        break
             
-            # Generate structured response
-            response_parts = [
-                f"Based on the available documents, I found information related to your query: '{query}'\\n"
-            ]
-            
+            # Generate short response
             if content_snippets:
-                response_parts.append("Key findings:\\n")
-                for i, (source, snippet) in enumerate(content_snippets[:3]):  # Limit to 3 snippets
-                    response_parts.append(f"{i+1}. From {source}: {snippet}...\\n")
-            
-            if sources:
-                response_parts.append(f"\\nThis information comes from {len(sources)} source(s): {', '.join(sources[:3])}")
-                if len(sources) > 3:
-                    response_parts.append(f" and {len(sources) - 3} more documents.")
-            
-            response_parts.append("\\nFor more detailed information, please refer to the specific document sections mentioned above.")
-            
-            return ''.join(response_parts)
+                return f"Based on the documents, {content_snippets[0].lower()}"
+            else:
+                return "I found some information but couldn't extract a clear answer."
             
         except Exception as e:
             self.logger.error(f"❌ Fallback response generation failed: {str(e)}")
-            return "I found relevant information in the documents but couldn't generate a proper response."
+            return "I found some information but couldn't process it properly."
     
     def _add_citations(self, response: str, chunks: List[Dict]) -> str:
         """Add citations and source attribution to response"""
@@ -555,7 +538,7 @@ Context format: Each section begins with [Source: filename, Section X] followed 
         """Generate response when no relevant chunks are found"""
         return {
             'query': query,
-            'response': "I couldn't find relevant information in the available documents to answer your query. You might try rephrasing your question or asking about a different topic.",
+            'response': "I couldn't find information about that in the documents. Try asking about something else or rephrasing your question.",
             'sources': [],
             'chunks_used': 0,
             'response_time': 0,

@@ -138,138 +138,73 @@ class LLMService:
     
     def _create_system_prompt(self) -> str:
         """Create enhanced system prompt for educational content"""
-        return """You are an expert educational AI assistant with advanced knowledge in assessment, learning, and educational technology.
+        return """You are a friendly AI assistant that gives short, conversational answers about educational topics.
 
-Your Role:
-- Provide accurate, evidence-based answers about educational topics
-- Focus on practical, actionable insights for educators
-- Maintain academic rigor while being accessible
-- Draw connections between educational theory and practice
+Keep responses:
+- Very short (2-3 sentences max)
+- Conversational and natural
+- Based only on the provided context
+- Like you're explaining from memory
 
-Guidelines:
-1. **Accuracy First**: Base answers strictly on the provided context
-2. **Educational Focus**: Emphasize learning outcomes and student benefits
-3. **Practical Application**: Include implementation strategies when relevant
-4. **Source Attribution**: Reference specific documents and sections
-5. **Balanced Perspective**: Present multiple viewpoints when appropriate
-6. **Clear Structure**: Use headings, bullet points, and examples
-
-Response Format:
-- Start with a direct answer to the question
-- Provide detailed explanation with context
-- Include practical examples or applications
-- End with key takeaways or next steps
-- Add source references throughout
-
-Quality Standards:
-- Comprehensive yet concise responses
-- Professional educational terminology
-- Evidence-based recommendations
-- Clear, actionable guidance"""
+Don't use headers, bullet points, or formal structure. Just answer naturally."""
 
     def _create_user_prompt(self, query: str, context: str, conversation_history: List = None) -> str:
-        """Create enhanced user prompt with context"""
+        """Create short, conversational prompt"""
         prompt_parts = []
         
         # Add conversation context if available
         if conversation_history:
             recent_queries = [item.get('query', '') for item in conversation_history[-2:]]
             if recent_queries:
-                prompt_parts.append(f"Previous conversation context: {' | '.join(recent_queries)}")
+                prompt_parts.append(f"Previous conversation: {' | '.join(recent_queries)}")
         
         # Add main context
         prompt_parts.extend([
-            "DOCUMENT CONTEXT:",
+            "CONTEXT:",
             context,
             "",
             f"QUESTION: {query}",
             "",
-            "Please provide a comprehensive answer based on the document context above. Include:",
-            "1. Direct answer to the question",
-            "2. Detailed explanation with examples",
-            "3. Practical applications or implications",
-            "4. References to specific sources",
-            "5. Key takeaways for educators"
+            "Give a short, conversational answer (2-3 sentences max) based on the context. Sound natural like you're explaining from memory."
         ])
         
         return "\n".join(prompt_parts)
     
     def _generate_fallback_response(self, query: str, context: str) -> str:
-        """Generate enhanced fallback response when API is unavailable"""
+        """Generate short fallback response when API is unavailable"""
         try:
             # Extract key information from context
             context_lines = context.split('\n')
             sources = []
-            content_sections = []
+            content_parts = []
             
             current_source = "Unknown"
-            current_content = []
             
             for line in context_lines:
                 line = line.strip()
                 if line.startswith('[Source:'):
-                    # Save previous section
-                    if current_content:
-                        content_sections.append({
-                            'source': current_source,
-                            'content': ' '.join(current_content)
-                        })
-                        current_content = []
-                    
                     # Extract new source
                     current_source = line.replace('[Source:', '').replace(']', '').strip()
                     if current_source not in sources:
                         sources.append(current_source)
-                        
-                elif line and not line.startswith('---'):
-                    current_content.append(line)
+                elif line and not line.startswith('---') and len(line) > 20:
+                    # Take meaningful content
+                    content_parts.append(line[:150])  # First 150 chars
+                    if len(content_parts) >= 2:  # Only need 2 content parts
+                        break
             
-            # Save last section
-            if current_content:
-                content_sections.append({
-                    'source': current_source,
-                    'content': ' '.join(current_content)
-                })
-            
-            # Generate structured response
-            response_parts = []
-            
-            # Header
-            response_parts.append(f"## Response to: {query}\n")
-            
-            if content_sections:
-                response_parts.append("Based on the available educational documents, here's what I found:\n")
-                
-                # Main content
-                response_parts.append("### Key Information\n")
-                
-                for i, section in enumerate(content_sections[:3], 1):
-                    content = section['content']
-                    if len(content) > 200:
-                        content = content[:200] + "..."
-                    
-                    response_parts.append(f"**{i}. From {section['source']}:**")
-                    response_parts.append(f"{content}\n")
-                
-                # Summary
-                if len(content_sections) > 1:
-                    response_parts.append("### Summary")
-                    response_parts.append("The documents provide multiple perspectives on this topic. ")
-                    response_parts.append("For comprehensive understanding, review all referenced sources.\n")
-                
-                # Sources
-                response_parts.append("### Sources Referenced")
-                for i, source in enumerate(sources, 1):
-                    response_parts.append(f"{i}. {source}")
-                
+            # Generate short, conversational response
+            if content_parts:
+                response = f"Based on the documents, {content_parts[0].lower()}"
+                if len(content_parts) > 1:
+                    response += f" {content_parts[1]}"
+                return response
             else:
-                response_parts.append("I found some relevant information, but couldn't extract clear details to answer your specific question. Please try rephrasing your query or asking about a different aspect of the topic.")
-            
-            return '\n'.join(response_parts)
+                return "I found some relevant information in the documents but couldn't extract a clear answer to your question."
             
         except Exception as e:
             self.logger.error(f"❌ Fallback response generation failed: {str(e)}")
-            return self._generate_error_response(query, str(e))
+            return "I found some information but couldn't process it properly."
     
     def _generate_error_response(self, query: str, error: str) -> str:
         """Generate response when all methods fail"""

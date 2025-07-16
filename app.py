@@ -365,45 +365,39 @@ def process_user_query(user_input: str, components: Dict):
                                             context_parts.append(f"[Source: {filename}]\n{text_content[:600]}")
                                     context = "\n\n".join(context_parts)
                         except Exception as e:
-                            # Fallback: use basic source info
-                            context_parts = []
-                            for source in chatbot_response['sources'][:3]:
-                                filename = source.get('filename', 'Unknown')
-                                context_parts.append(f"[Source: {filename}]\nRelevant educational content about {user_input}")
-                            context = "\n\n".join(context_parts)
+                            # No fallback - use empty context
+                            context = ""
                     
-                    # If no context from sources, use a basic educational context
-                    if not context:
-                        context = f"Educational content related to: {user_input}"
-                    
-                    # Get enhanced response from LLM
-                    conversation_history = [
-                        msg for msg in st.session_state.messages[-4:] 
-                        if msg["role"] == "user"
-                    ]
-                    
-                    try:
-                        llm_result = components['llm_service'].generate_response(
-                            user_input, 
-                            context, 
-                            conversation_history
-                        )
+                    # Only use LLM if we have actual context from documents
+                    if context:
+                        # Get enhanced response from LLM
+                        conversation_history = [
+                            msg for msg in st.session_state.messages[-4:] 
+                            if msg["role"] == "user"
+                        ]
                         
-                        # Only replace response if LLM actually provides a meaningful response
-                        if llm_result and llm_result.get('response') and len(llm_result.get('response', '').strip()) > 10:
-                            chatbot_response['response'] = llm_result['response']
-                            chatbot_response['llm_enhanced'] = True
-                            chatbot_response['model_used'] = llm_result.get('model_used', 'unknown')
-                        else:
-                            # Keep original chatbot response if LLM fails
+                        try:
+                            llm_result = components['llm_service'].generate_response(
+                                user_input, 
+                                context, 
+                                conversation_history
+                            )
+                            
+                            # Only replace response if LLM actually provides a meaningful response
+                            if llm_result and llm_result.get('response') and len(llm_result.get('response', '').strip()) > 10:
+                                chatbot_response['response'] = llm_result['response']
+                                chatbot_response['llm_enhanced'] = True
+                                chatbot_response['model_used'] = llm_result.get('model_used', 'unknown')
+                            else:
+                                # Keep original chatbot response if LLM fails
+                                chatbot_response['llm_enhanced'] = False
+                                chatbot_response['model_used'] = 'chatbot_fallback'
+                                
+                        except Exception as e:
+                            # If LLM fails, keep original chatbot response
                             chatbot_response['llm_enhanced'] = False
                             chatbot_response['model_used'] = 'chatbot_fallback'
-                            
-                    except Exception as e:
-                        # If LLM fails, keep original chatbot response
-                        chatbot_response['llm_enhanced'] = False
-                        chatbot_response['model_used'] = 'chatbot_fallback'
-                        chatbot_response['llm_error'] = str(e)
+                            chatbot_response['llm_error'] = str(e)
                 
                 # Update response time
                 total_time = time.time() - start_time
