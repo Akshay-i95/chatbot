@@ -12,8 +12,11 @@ Your workspace is now ready for Streamlit Cloud deployment.
 
 ## Next Steps:
 
-### 1. Update Secrets (Important!)
-Edit `.streamlit/secrets.toml` and add your actual Azure connection string or account key.
+### 1. Add Your API Key in Streamlit Cloud
+When deploying, add your actual OpenRouter API key manually in the Streamlit Cloud secrets section:
+```
+OPENROUTER_API_KEY = "your_actual_api_key_here"
+```
 
 ### 2. Deploy to Streamlit Cloud
 1. Go to https://share.streamlit.io

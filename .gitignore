@@ -99,6 +99,10 @@ desktop.ini
 *.pptx
 *.ppt
 
+# Streamlit secrets and config (for security)
+.streamlit/secrets.toml
+secrets.toml
+
 # API Keys and Secrets
 secrets.json
 config.json
