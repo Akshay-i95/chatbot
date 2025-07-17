@@ -19,7 +19,7 @@ Professional Streamlit web application with OpenRouter LLM integration, designed
 - **`requirements.txt`** - Dependencies (updated with Streamlit & OpenAI)
 
 #### **Data Files:**
-- **`vector_store/`** - Populated with 11,581 chunks from 251 PDFs
+- **`vector_store_faiss/`** - FAISS vector database with 11,581 chunks from 251 PDFs
 
 ---
 
