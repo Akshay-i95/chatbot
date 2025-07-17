@@ -203,16 +203,17 @@ def load_system_components():
     try:
         st.info("🔄 Loading system components...")
         
-        # Configuration
+        # Configuration - Read from environment variables
         config = {
-            'vector_db_path': './vector_store',
-            'collection_name': 'pdf_chunks',
-            'embedding_model': 'all-MiniLM-L6-v2',
-            'max_context_chunks': 5,
-            'min_similarity_threshold': 0.35,
-            'enable_citations': True,
-            'enable_context_expansion': True,
-            'max_context_length': 4000
+            'vector_db_type': os.getenv('VECTOR_DB_TYPE', 'faiss'),
+            'vector_db_path': os.getenv('VECTOR_DB_PATH', './vector_store_faiss'),
+            'collection_name': os.getenv('COLLECTION_NAME', 'pdf_chunks'),
+            'embedding_model': os.getenv('EMBEDDING_MODEL', 'all-MiniLM-L6-v2'),
+            'max_context_chunks': int(os.getenv('MAX_CONTEXT_CHUNKS', '2')),
+            'min_similarity_threshold': float(os.getenv('MIN_SIMILARITY_THRESHOLD', '0.65')),
+            'enable_citations': os.getenv('ENABLE_CITATIONS', 'true').lower() == 'true',
+            'enable_context_expansion': os.getenv('ENABLE_CONTEXT_EXPANSION', 'false').lower() == 'true',
+            'max_context_length': int(os.getenv('MAX_CONTEXT_LENGTH', '2000'))
         }
         
         # Initialize Vector Database
