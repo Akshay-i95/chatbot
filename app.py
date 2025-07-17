@@ -59,14 +59,17 @@ def load_custom_css():
         border-left: 4px solid #667eea;
     }
     
+    /* Light mode styles */
     .user-message {
         background-color: #f0f2f6;
         border-left-color: #667eea;
+        color: #262730;
     }
     
     .ai-message {
         background-color: #e8f4fd;
         border-left-color: #00a0dc;
+        color: #262730;
     }
     
     .source-info {
@@ -75,6 +78,7 @@ def load_custom_css():
         border-radius: 5px;
         font-size: 0.9rem;
         margin-top: 1rem;
+        color: #262730;
     }
     
     .metrics-container {
@@ -82,6 +86,73 @@ def load_custom_css():
         padding: 1rem;
         border-radius: 10px;
         margin: 1rem 0;
+        color: #262730;
+    }
+    
+    .sidebar-info {
+        background-color: #e9ecef;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+        color: #262730;
+    }
+    
+    /* Dark mode styles */
+    @media (prefers-color-scheme: dark) {
+        .user-message {
+            background-color: #2d3748;
+            border-left-color: #667eea;
+            color: #ffffff !important;
+        }
+        
+        .ai-message {
+            background-color: #1a365d;
+            border-left-color: #00a0dc;
+            color: #ffffff !important;
+        }
+        
+        .source-info {
+            background-color: #2d3748;
+            color: #e2e8f0 !important;
+        }
+        
+        .metrics-container {
+            background-color: #2d3748;
+            color: #e2e8f0 !important;
+        }
+        
+        .sidebar-info {
+            background-color: #2d3748;
+            color: #e2e8f0 !important;
+        }
+    }
+    
+    /* Streamlit dark theme detection */
+    [data-theme="dark"] .user-message {
+        background-color: #2d3748 !important;
+        border-left-color: #667eea !important;
+        color: #ffffff !important;
+    }
+    
+    [data-theme="dark"] .ai-message {
+        background-color: #1a365d !important;
+        border-left-color: #00a0dc !important;
+        color: #ffffff !important;
+    }
+    
+    [data-theme="dark"] .source-info {
+        background-color: #2d3748 !important;
+        color: #e2e8f0 !important;
+    }
+    
+    [data-theme="dark"] .metrics-container {
+        background-color: #2d3748 !important;
+        color: #e2e8f0 !important;
+    }
+    
+    [data-theme="dark"] .sidebar-info {
+        background-color: #2d3748 !important;
+        color: #e2e8f0 !important;
     }
     
     .status-success {
@@ -97,13 +168,6 @@ def load_custom_css():
     .status-error {
         color: #dc3545;
         font-weight: bold;
-    }
-    
-    .sidebar-info {
-        background-color: #e9ecef;
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 1rem 0;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -193,6 +257,32 @@ def display_header():
         <p>Advanced Document Analysis with AI-Powered Responses</p>
         <p><em>Ask questions about your educational documents and get intelligent answers</em></p>
     </div>
+    
+    <script>
+    // Dynamic theme detection and CSS injection
+    function updateThemeCSS() {
+        const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const streamlitIsDark = document.querySelector('[data-testid="stAppViewContainer"]')?.style.backgroundColor === 'rgb(14, 17, 23)' || 
+                               document.querySelector('.stApp')?.classList.contains('dark') ||
+                               document.body.classList.contains('dark');
+        
+        const body = document.body;
+        if (isDark || streamlitIsDark || body.style.backgroundColor === 'rgb(14, 17, 23)') {
+            body.setAttribute('data-theme', 'dark');
+        } else {
+            body.setAttribute('data-theme', 'light');
+        }
+    }
+    
+    // Run immediately and on changes
+    updateThemeCSS();
+    if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeCSS);
+    }
+    
+    // Also check periodically in case Streamlit changes theme
+    setInterval(updateThemeCSS, 1000);
+    </script>
     """, unsafe_allow_html=True)
 
 def display_system_status(components):
