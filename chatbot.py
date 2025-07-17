@@ -431,7 +431,16 @@ Context format: Each section begins with [Source: filename, Section X] followed 
             
             # Generate short response
             if content_snippets:
-                return f"Based on the documents, {content_snippets[0].lower()}"
+                # Clean any HTML tags and unwanted characters from the content
+                clean_content = re.sub(r'<[^>]+>', '', content_snippets[0])  # Remove HTML tags
+                clean_content = re.sub(r'</?\w+[^>]*>', '', clean_content)  # Extra HTML cleaning
+                clean_content = clean_content.replace('&nbsp;', ' ').replace('&amp;', '&')  # HTML entities
+                clean_content = clean_content.strip()
+                
+                if clean_content:
+                    return f"Based on the documents, {clean_content.lower()}"
+                else:
+                    return "I found some information but couldn't extract a clear answer."
             else:
                 return "I found some information but couldn't extract a clear answer."
             

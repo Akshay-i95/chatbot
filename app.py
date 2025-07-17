@@ -301,11 +301,18 @@ def display_chat_message(message):
             confidence = 0
             response_time = 0
         
+        # Clean response text from any HTML tags before display
+        import re
+        clean_response_text = re.sub(r'<[^>]+>', '', response_text)  # Remove HTML tags
+        clean_response_text = re.sub(r'</?\w+[^>]*>', '', clean_response_text)  # Extra cleaning
+        clean_response_text = clean_response_text.replace('&nbsp;', ' ').replace('&amp;', '&')
+        clean_response_text = ' '.join(clean_response_text.split())  # Normalize whitespace
+        
         # Display main response
         st.markdown(f"""
         <div class="chat-message ai-message">
             <strong>🤖 AI Assistant:</strong><br>
-            {response_text}
+            {clean_response_text}
         </div>
         """, unsafe_allow_html=True)
         
@@ -412,6 +419,18 @@ def process_user_query(user_input: str, components: Dict):
                 query_count = st.session_state.stats['total_queries']
                 new_avg = (current_avg * (query_count - 1) + total_time) / query_count
                 st.session_state.stats['avg_response_time'] = new_avg
+                
+                # Final HTML cleaning of the response to ensure no HTML tags leak through
+                import re
+                if 'response' in chatbot_response:
+                    response_text = chatbot_response['response']
+                    # Comprehensive HTML cleaning
+                    response_text = re.sub(r'<[^>]+>', '', response_text)  # Remove HTML tags
+                    response_text = re.sub(r'</?\w+[^>]*>', '', response_text)  # Extra cleaning
+                    response_text = response_text.replace('&nbsp;', ' ').replace('&amp;', '&')  # HTML entities
+                    response_text = response_text.replace('\n', ' ').replace('\r', ' ')  # Line breaks
+                    response_text = ' '.join(response_text.split())  # Normalize whitespace
+                    chatbot_response['response'] = response_text.strip()
                 
                 return chatbot_response
             

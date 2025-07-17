@@ -7,6 +7,7 @@ import os
 import json
 import logging
 import requests
+import re
 from typing import Dict, List, Optional
 from datetime import datetime
 import time
@@ -39,10 +40,15 @@ class LLMService:
         try:
             start_time = time.time()
             
+            self.logger.info(f"🔄 Generating response for query: {query[:50]}...")
+            self.logger.info(f"📄 Context length: {len(context)} characters")
+            
             if self.api_available:
+                self.logger.info("🌐 Trying OpenRouter API...")
                 # Try OpenRouter API
                 response = self._call_openrouter_api(query, context, conversation_history)
                 if response:
+                    self.logger.info(f"✅ OpenRouter API successful: {response[:100]}...")
                     return {
                         'response': response,
                         'model_used': 'openrouter',
@@ -50,8 +56,13 @@ class LLMService:
                         'response_time': time.time() - start_time,
                         'timestamp': datetime.now().isoformat()
                     }
+                else:
+                    self.logger.warning("⚠️ OpenRouter API returned no response, falling back...")
+            else:
+                self.logger.info("❌ OpenRouter API not available, using fallback...")
             
             # Fallback to local generation
+            self.logger.info("🔄 Using fallback response generation...")
             response = self._generate_fallback_response(query, context)
             
             return {
@@ -173,6 +184,9 @@ Don't use headers, bullet points, or formal structure. Just answer naturally."""
     def _generate_fallback_response(self, query: str, context: str) -> str:
         """Generate short fallback response when API is unavailable"""
         try:
+            # Debug: Log that we're using fallback
+            self.logger.info("🔄 Using fallback response generation")
+            
             # Extract key information from context
             context_lines = context.split('\n')
             sources = []
@@ -189,18 +203,52 @@ Don't use headers, bullet points, or formal structure. Just answer naturally."""
                         sources.append(current_source)
                 elif line and not line.startswith('---') and len(line) > 20:
                     # Take meaningful content
-                    content_parts.append(line[:150])  # First 150 chars
-                    if len(content_parts) >= 2:  # Only need 2 content parts
+                    content_parts.append(line)  # Keep full content
+                    if len(content_parts) >= 3:  # Get more content parts
                         break
             
-            # Generate short, conversational response
+            # Generate conversational response based on actual content
             if content_parts:
-                response = f"Based on the documents, {content_parts[0].lower()}"
-                if len(content_parts) > 1:
-                    response += f" {content_parts[1]}"
-                return response
-            else:
-                return "I found some relevant information in the documents but couldn't extract a clear answer to your question."
+                # Try to extract key information about the query topic
+                response_parts = []
+                
+                for content in content_parts:
+                    # Look for content related to the query
+                    query_words = query.lower().split()
+                    content_lower = content.lower()
+                    
+                    # Check if this content is relevant to the query
+                    relevance_score = sum(1 for word in query_words if word in content_lower)
+                    
+                    if relevance_score > 0 or len(response_parts) == 0:  # Include first content or relevant content
+                        # Take first 200 characters and make it conversational
+                        clean_content = content[:200].strip()
+                        if clean_content:
+                            response_parts.append(clean_content)
+                    
+                    if len(response_parts) >= 2:  # Limit to 2 parts for brevity
+                        break
+                
+                if response_parts:
+                    # Create a natural response
+                    response = response_parts[0]
+                    if len(response_parts) > 1:
+                        response += f" {response_parts[1]}"
+                    
+                    # Comprehensive HTML cleaning and formatting
+                    response = re.sub(r'<[^>]+>', '', response)  # Remove HTML tags
+                    response = re.sub(r'</?\w+[^>]*>', '', response)  # Extra HTML tag cleaning
+                    response = response.replace('&nbsp;', ' ').replace('&amp;', '&')  # HTML entities
+                    response = response.replace('•', '').replace('-', '').strip()  # List markers
+                    response = response.replace('\n', ' ').replace('\r', ' ')  # Line breaks
+                    response = ' '.join(response.split())  # Normalize whitespace
+                    
+                    if not response.endswith('.'):
+                        response += '.'
+                    
+                    return response
+            
+            return "I found some relevant information in the documents but couldn't extract a clear answer to your question."
             
         except Exception as e:
             self.logger.error(f"❌ Fallback response generation failed: {str(e)}")
