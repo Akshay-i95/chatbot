@@ -19,11 +19,11 @@ class LLMService:
         self.api_key = os.getenv('OPENROUTER_API_KEY')
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
         
-        # Best free models with high request limits (updated order)
+        # Best free models with high request limits (updated with more reliable models)
         self.models = {
-            'primary': 'google/gemma-2-9b-it:free',  # Fast and reliable
+            'primary': 'mistralai/mistral-7b-instruct:free',  # More reliable and context-aware
             'fallback': 'microsoft/phi-3-mini-4k-instruct:free',  # Good fallback
-            'fast': 'qwen/qwen-2-7b-instruct:free'  # Alternative option
+            'fast': 'google/gemma-2-9b-it:free'  # Keep as last resort
         }
         
         self.logger = logging.getLogger(__name__)
@@ -125,8 +125,14 @@ class LLMService:
                         result = response.json()
                         if 'choices' in result and len(result['choices']) > 0:
                             content = result['choices'][0]['message']['content']
-                            self.logger.info(f"✅ OpenRouter response from {model_name}: {content[:100]}...")
-                            return content
+                            
+                            # Validate response quality
+                            if self._is_valid_response(content, query):
+                                self.logger.info(f"✅ OpenRouter response from {model_name}: {content[:100]}...")
+                                return content
+                            else:
+                                self.logger.warning(f"⚠️ Invalid response from {model_name}, trying next model...")
+                                continue
                         else:
                             self.logger.warning(f"⚠️ No choices in OpenRouter response from {model_name}: {result}")
                     else:
@@ -149,15 +155,15 @@ class LLMService:
     
     def _create_system_prompt(self) -> str:
         """Create enhanced system prompt for educational content"""
-        return """You are a friendly AI assistant that gives short, conversational answers about educational topics.
+        return """You are an educational AI assistant. You MUST answer based ONLY on the provided document context.
 
-Keep responses:
-- Very short (2-3 sentences max)
-- Conversational and natural
-- Based only on the provided context
-- Like you're explaining from memory
-
-Don't use headers, bullet points, or formal structure. Just answer naturally."""
+CRITICAL RULES:
+- Use ONLY the information provided in the context below
+- If the context contains relevant information, use it to answer
+- Give short, conversational answers (2-3 sentences max)
+- Never say "I need more context" - the context is already provided
+- Never ask follow-up questions - just answer based on what's given
+- Sound natural and helpful, like explaining from memory"""
 
     def _create_user_prompt(self, query: str, context: str, conversation_history: List = None) -> str:
         """Create short, conversational prompt"""
@@ -171,12 +177,12 @@ Don't use headers, bullet points, or formal structure. Just answer naturally."""
         
         # Add main context
         prompt_parts.extend([
-            "CONTEXT:",
+            "DOCUMENT CONTEXT (USE THIS TO ANSWER):",
             context,
             "",
-            f"QUESTION: {query}",
+            f"USER QUESTION: {query}",
             "",
-            "Give a short, conversational answer (2-3 sentences max) based on the context. Sound natural like you're explaining from memory."
+            "Answer the question using ONLY the context above. Be conversational and brief (2-3 sentences)."
         ])
         
         return "\n".join(prompt_parts)
@@ -243,6 +249,10 @@ Don't use headers, bullet points, or formal structure. Just answer naturally."""
                     response = response.replace('\n', ' ').replace('\r', ' ')  # Line breaks
                     response = ' '.join(response.split())  # Normalize whitespace
                     
+                    # Make it more conversational if it's too formal
+                    if response.startswith('Assessment'):
+                        response = response[0].lower() + response[1:]
+                    
                     if not response.endswith('.'):
                         response += '.'
                     
@@ -253,6 +263,48 @@ Don't use headers, bullet points, or formal structure. Just answer naturally."""
         except Exception as e:
             self.logger.error(f"❌ Fallback response generation failed: {str(e)}")
             return "I found some information but couldn't process it properly."
+    
+    def _is_valid_response(self, response: str, query: str) -> bool:
+        """Check if the LLM response is valid and relevant"""
+        try:
+            response_lower = response.lower()
+            
+            # Invalid response patterns
+            invalid_patterns = [
+                "please provide me with",
+                "i need more information",
+                "i need more context",
+                "please provide more context",
+                "can you help me write",
+                "please complete this sentence",
+                "what is the meaning of the word",
+                "let me know, and i'll be happy to help",
+                "more information to understand",
+                "please provide the context"
+            ]
+            
+            # Check if response contains invalid patterns
+            for pattern in invalid_patterns:
+                if pattern in response_lower:
+                    return False
+            
+            # Check if response is too short (likely generic)
+            if len(response.strip()) < 20:
+                return False
+            
+            # Check if response seems to be about the query topic
+            query_words = set(query.lower().split())
+            response_words = set(response_lower.split())
+            
+            # If there's some overlap or response is substantial, consider it valid
+            overlap = len(query_words.intersection(response_words))
+            if overlap > 0 or len(response) > 50:
+                return True
+                
+            return False
+            
+        except Exception:
+            return True  # If validation fails, assume it's valid
     
     def _generate_error_response(self, query: str, error: str) -> str:
         """Generate response when all methods fail"""
