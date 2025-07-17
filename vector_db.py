@@ -426,7 +426,8 @@ class EnhancedVectorDBManager:
                 if idx == -1:  # No more results
                     break
                 
-                metadata = self.faiss_metadata.get(idx, {})
+                # Convert index to string key for metadata lookup
+                metadata = self.faiss_metadata.get(str(idx), {})
                 
                 # Apply filters if specified
                 if filters:
