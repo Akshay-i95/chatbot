@@ -2,10 +2,10 @@
 streamlit>=1.28.0
 python-dotenv>=1.0.0
 
-# AI/ML Dependencies
-chromadb>=0.4.15
+# AI/ML Dependencies - Using FAISS for better cloud compatibility
 sentence-transformers>=2.2.0
 numpy>=1.26.0
+faiss-cpu>=1.7.0
 
 # Utility Dependencies  
 requests>=2.31.0

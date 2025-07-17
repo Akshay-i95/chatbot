@@ -54,7 +54,8 @@ venv.bak/
 htmlcov/
 
 # Vector Database - Allow for deployment
-# vector_store/  # Commented out to include in deployment
+# vector_store/  # Old ChromaDB - excluded from deployment  
+# vector_store_faiss/  # FAISS vector store - included for deployment
 vector_store_backup/
 *.sqlite3.backup
 *.db.backup
