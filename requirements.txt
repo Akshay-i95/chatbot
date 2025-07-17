@@ -1,38 +1,16 @@
-# Use precompiled wheels only (no source compilation needed)
---only-binary=all
-
-# Core dependencies
-azure-storage-blob
-python-dotenv
-tqdm
-psutil
-
-# PDF processing (lightweight)
-PyPDF2
-pdfplumber
-
-# Enhanced PDF processing (Phase 2)
-PyMuPDF  # fitz for advanced PDF features
-pytesseract  # OCR functionality
-Pillow  # Image processing for OCR
-pikepdf  # PDF repair and validation
-
-# Streamlit web interface (Phase 4)
-streamlit>=1.28.0
-openai>=1.0.0  # For OpenRouter API integration
-
-# Text processing
-tiktoken
-
-# AI/ML (use CPU versions with precompiled wheels)
-numpy
-pandas
-torch --index-url https://download.pytorch.org/whl/cpu
-sentence-transformers
-chromadb
-
-# Optional: Alternative vector databases
-# faiss-cpu  # Uncomment if using FAISS instead of ChromaDB
-
-# Optional: LLM integration
-# openai  # Uncomment if using OpenAI API for responses
+streamlit==1.28.1
+python-dotenv==1.0.0
+chromadb==0.4.15
+sentence-transformers==2.2.2
+requests==2.31.0
+azure-storage-blob==12.19.0
+PyPDF2==3.0.1
+pandas==2.1.3
+numpy==1.24.3
+scikit-learn==1.3.2
+faiss-cpu==1.7.4
+Pillow==10.1.0
+pytesseract==0.3.10
+tiktoken==0.5.1
+tqdm==4.66.1
+psutil==5.9.6

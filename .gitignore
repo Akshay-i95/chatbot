@@ -53,10 +53,11 @@ venv.bak/
 .coverage
 htmlcov/
 
-# Vector Database
-vector_store/
-*.sqlite3
-*.db
+# Vector Database - Allow for deployment
+# vector_store/  # Commented out to include in deployment
+vector_store_backup/
+*.sqlite3.backup
+*.db.backup
 
 # Log Files
 *.log
