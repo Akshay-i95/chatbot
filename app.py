@@ -48,135 +48,170 @@ def reload_env():
 # Call this to ensure fresh environment loading
 reload_env()
 
-# Custom CSS for professional styling
+# Custom CSS for modern Gemini-like styling
 def load_custom_css():
     st.markdown("""
     <style>
+    /* Main container styling */
     .main-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1rem;
-        border-radius: 10px;
+        background: linear-gradient(135deg, #4285f4 0%, #34a853 50%, #ea4335 100%);
+        padding: 2rem;
+        border-radius: 15px;
         color: white;
         text-align: center;
         margin-bottom: 2rem;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
     }
     
+    /* Modern chat message styling */
     .chat-message {
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 1rem 0;
-        border-left: 4px solid #667eea;
+        padding: 1.5rem;
+        border-radius: 15px;
+        margin: 1.5rem 0;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        transition: all 0.3s ease;
     }
     
-    /* Light mode styles */
+    .chat-message:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+    }
+    
+    /* User message - Gemini-like blue */
     .user-message {
-        background-color: #f0f2f6;
-        border-left-color: #667eea;
-        color: #262730;
+        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        border-left: 4px solid #2196f3;
+        color: #1565c0;
     }
     
+    /* AI message - Gemini-like clean white */
     .ai-message {
-        background-color: #e8f4fd;
-        border-left-color: #00a0dc;
-        color: #262730;
+        background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
+        border-left: 4px solid #4caf50;
+        color: #2e7d32;
     }
     
-    .source-info {
-        background-color: #f8f9fa;
-        padding: 0.5rem;
-        border-radius: 5px;
-        font-size: 0.9rem;
-        margin-top: 1rem;
-        color: #262730;
-    }
-    
-    .metrics-container {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 1rem 0;
-        color: #262730;
-    }
-    
-    .sidebar-info {
-        background-color: #e9ecef;
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 1rem 0;
-        color: #262730;
-    }
-    
-    /* Dark mode styles */
-    @media (prefers-color-scheme: dark) {
-        .user-message {
-            background-color: #2d3748;
-            border-left-color: #667eea;
-            color: #ffffff !important;
-        }
-        
-        .ai-message {
-            background-color: #1a365d;
-            border-left-color: #00a0dc;
-            color: #ffffff !important;
-        }
-        
-        .source-info {
-            background-color: #2d3748;
-            color: #e2e8f0 !important;
-        }
-        
-        .metrics-container {
-            background-color: #2d3748;
-            color: #e2e8f0 !important;
-        }
-        
-        .sidebar-info {
-            background-color: #2d3748;
-            color: #e2e8f0 !important;
-        }
-    }
-    
-    /* Streamlit dark theme detection */
-    [data-theme="dark"] .user-message {
-        background-color: #2d3748 !important;
-        border-left-color: #667eea !important;
-        color: #ffffff !important;
-    }
-    
+    /* Dark mode AI message */
     [data-theme="dark"] .ai-message {
-        background-color: #1a365d !important;
-        border-left-color: #00a0dc !important;
-        color: #ffffff !important;
+        background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%);
+        color: #81c784 !important;
     }
     
-    [data-theme="dark"] .source-info {
-        background-color: #2d3748 !important;
+    [data-theme="dark"] .user-message {
+        background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+        color: #90caf9 !important;
+    }
+    
+    /* Reasoning section - Gemini-inspired */
+    .reasoning-section {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border: 1px solid #dee2e6;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        border-left: 4px solid #ff9800;
+    }
+    
+    [data-theme="dark"] .reasoning-section {
+        background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+        border-color: #4a5568;
         color: #e2e8f0 !important;
     }
     
-    [data-theme="dark"] .metrics-container {
-        background-color: #2d3748 !important;
+    /* Source information styling */
+    .source-container {
+        background: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        border-left: 4px solid #6366f1;
+    }
+    
+    [data-theme="dark"] .source-container {
+        background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+        color: #f3f4f6 !important;
+    }
+    
+    /* Modern metrics */
+    .metric-card {
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        border-radius: 10px;
+        padding: 1rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        border: 1px solid #e2e8f0;
+        text-align: center;
+    }
+    
+    [data-theme="dark"] .metric-card {
+        background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+        border-color: #4a5568;
         color: #e2e8f0 !important;
     }
     
-    [data-theme="dark"] .sidebar-info {
-        background-color: #2d3748 !important;
+    /* Download button styling */
+    .download-button {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-weight: 500;
+    }
+    
+    .download-button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+    
+    /* Quality indicators */
+    .quality-high { color: #059669; font-weight: 600; }
+    .quality-medium { color: #d97706; font-weight: 600; }
+    .quality-low { color: #dc2626; font-weight: 600; }
+    
+    /* Sidebar styling */
+    .sidebar-section {
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin: 1rem 0;
+        border-left: 4px solid #8b5cf6;
+    }
+    
+    [data-theme="dark"] .sidebar-section {
+        background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
         color: #e2e8f0 !important;
     }
     
-    .status-success {
-        color: #28a745;
-        font-weight: bold;
+    /* Animation for thinking */
+    .thinking-animation {
+        animation: pulse 2s infinite;
     }
     
-    .status-warning {
-        color: #ffc107;
-        font-weight: bold;
+    @keyframes pulse {
+        0% { opacity: 0.6; }
+        50% { opacity: 1; }
+        100% { opacity: 0.6; }
     }
     
-    .status-error {
-        color: #dc3545;
-        font-weight: bold;
+    /* Modern scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
     }
     </style>
     """, unsafe_allow_html=True)
@@ -202,6 +237,7 @@ def initialize_session_state():
         st.session_state.stats = {
             'total_queries': 0,
             'successful_responses': 0,
+            'total_response_time': 0,
             'avg_response_time': 0,
             'session_start': datetime.now()
         }
@@ -266,99 +302,99 @@ def load_system_components():
         }
 
 def display_header():
-    """Display application header"""
+    """Display modern Gemini-inspired application header"""
     st.markdown("""
     <div class="main-header">
-        <h1>🤖 Edify AI Chatbot</h1>
-        <p>Advanced Document Analysis with AI-Powered Responses</p>
-        <p><em>Ask questions about your educational documents and get intelligent answers</em></p>
+        <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 1rem;">
+            <div style="width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%); display: flex; align-items: center; justify-content: center; margin-right: 1rem; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                <span style="font-size: 24px;">🤖</span>
+            </div>
+            <h1 style="margin: 0; font-size: 2.5rem; font-weight: 300; background: linear-gradient(135deg, #ffffff 0%, #e8f4fd 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                Edify AI
+            </h1>
+        </div>
+        <p style="font-size: 1.2rem; font-weight: 300; margin-bottom: 0.5rem; opacity: 0.95;">
+            Advanced Educational Assistant
+        </p>
+        <p style="font-size: 1rem; opacity: 0.8; margin: 0;">
+            💡 Ask questions about your documents • 🧠 Get intelligent reasoning • 📚 Access source materials
+        </p>
     </div>
-    
-    <script>
-    // Dynamic theme detection and CSS injection
-    function updateThemeCSS() {
-        const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const streamlitIsDark = document.querySelector('[data-testid="stAppViewContainer"]')?.style.backgroundColor === 'rgb(14, 17, 23)' || 
-                               document.querySelector('.stApp')?.classList.contains('dark') ||
-                               document.body.classList.contains('dark');
-        
-        const body = document.body;
-        if (isDark || streamlitIsDark || body.style.backgroundColor === 'rgb(14, 17, 23)') {
-            body.setAttribute('data-theme', 'dark');
-        } else {
-            body.setAttribute('data-theme', 'light');
-        }
-    }
-    
-    // Run immediately and on changes
-    updateThemeCSS();
-    if (window.matchMedia) {
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeCSS);
-    }
-    
-    // Also check periodically in case Streamlit changes theme
-    setInterval(updateThemeCSS, 1000);
-    </script>
     """, unsafe_allow_html=True)
 
 def display_system_status(components):
-    """Display system status in sidebar"""
+    """Display modern system status in sidebar"""
     with st.sidebar:
-        st.header("📊 System Status")
+        st.markdown("""
+        <div class="sidebar-section">
+            <h3 style="margin-bottom: 1rem; color: #374151;">⚡ System Status</h3>
+        </div>
+        """, unsafe_allow_html=True)
         
         if components['status'] == 'ready':
-            st.markdown('<p class="status-success">🟢 System Ready</p>', unsafe_allow_html=True)
+            st.success("🟢 **System Ready**")
             
             # Vector DB Status
             try:
                 db_info = components['vector_db'].get_database_info()
-                st.markdown(f"""
-                <div class="sidebar-info">
-                    <strong>📚 Vector Database</strong><br>
-                    Documents: {db_info.get('total_documents', 0)}<br>
-                    Chunks: {db_info.get('total_chunks', 0)}<br>
-                    Status: Ready
-                </div>
-                """, unsafe_allow_html=True)
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("📚 Documents", db_info.get('total_documents', 0))
+                with col2:
+                    st.metric("🧩 Chunks", db_info.get('total_chunks', 0))
             except:
                 st.warning("⚠️ Vector DB info unavailable")
             
-            # LLM Status
+            # AI Service Status
             api_key = os.getenv('OPENROUTER_API_KEY')
-            if api_key and api_key != 'your_openrouter_api_key_here':
-                st.markdown('<p class="status-success">🟢 OpenRouter API Connected</p>', unsafe_allow_html=True)
+            gemini_key = os.getenv('GEMINI_API_KEY')
+            
+            if (api_key and api_key != 'your_openrouter_api_key_here') or (gemini_key and gemini_key != 'your_gemini_api_key_here'):
+                st.success("🧠 **Advanced AI Active**")
+                if gemini_key and gemini_key != 'your_gemini_api_key_here':
+                    st.caption("🌟 Gemini AI Primary")
+                if api_key and api_key != 'your_openrouter_api_key_here':
+                    st.caption("🌐 OpenRouter Fallback")
             else:
-                st.markdown('<p class="status-warning">🟡 Using Fallback Responses</p>', unsafe_allow_html=True)
-                st.info("💡 Add OPENROUTER_API_KEY to .env for enhanced AI responses")
+                st.info("🔧 **Local Processing Mode**")
+                st.caption("Add API keys for enhanced AI")
         
         elif components['status'] == 'error':
-            st.markdown('<p class="status-error">🔴 System Error</p>', unsafe_allow_html=True)
-            st.error(components.get('error', 'Unknown error'))
+            st.error("🔴 **System Error**")
+            st.caption(components.get('error', 'Unknown error'))
         
         else:
-            st.markdown('<p class="status-warning">🟡 Initializing...</p>', unsafe_allow_html=True)
+            st.warning("🟡 **Initializing...**")
+            st.caption("Please wait")
 
 def display_session_stats():
-    """Display session statistics"""
+    """Display modern session statistics"""
     with st.sidebar:
-        st.header("📈 Session Stats")
+        st.markdown("""
+        <div class="sidebar-section">
+            <h3 style="margin-bottom: 1rem; color: #374151;">� Session Stats</h3>
+        </div>
+        """, unsafe_allow_html=True)
         
         stats = st.session_state.stats
         session_duration = (datetime.now() - stats['session_start']).total_seconds() / 60
         
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Queries", stats['total_queries'])
-            st.metric("Success Rate", f"{(stats['successful_responses'] / max(stats['total_queries'], 1) * 100):.1f}%")
-        
+            st.metric("💬 Queries", stats['total_queries'])
+            st.metric("⏱️ Duration", f"{session_duration:.1f}m")
         with col2:
-            st.metric("Avg Response", f"{stats['avg_response_time']:.2f}s")
-            st.metric("Session Time", f"{session_duration:.1f}m")
+            st.metric("✅ Success", stats['successful_responses'])
+            st.metric("⚡ Avg Time", f"{stats['avg_response_time']:.1f}s")
 
 def display_conversation_controls():
     """Display conversation control buttons"""
     with st.sidebar:
-        st.header("🎛️ Controls")
+        st.markdown("""
+        <div class="sidebar-section">
+            <h3 style="margin-bottom: 1rem; color: #374151;">🎛️ Controls</h3>
+        </div>
+        """, unsafe_allow_html=True)
         
         col1, col2 = st.columns(2)
         
@@ -370,7 +406,7 @@ def display_conversation_controls():
                 st.rerun()
         
         with col2:
-            if st.button("� Reset Stats", help="Reset session statistics"):
+            if st.button("📊 Reset", help="Reset session statistics", use_container_width=True):
                 st.session_state.stats = {
                     'total_queries': 0,
                     'successful_responses': 0,
@@ -396,128 +432,28 @@ def display_conversation_controls():
             st.rerun()
 
 def display_azure_service_status(components):
-    """Display Azure download service status and PDF browser"""
-    with st.sidebar:
-        st.header("📥 PDF Downloads")
-        
-        if components['status'] == 'ready' and components['chatbot']:
-            chatbot = components['chatbot']
-            
-            # Check if Azure service is available
-            if hasattr(chatbot, 'azure_service') and chatbot.azure_service:
-                # Get service statistics
-                try:
-                    stats = chatbot.get_download_service_stats()
-                    
-                    if stats.get('service_available'):
-                        st.success("✅ Azure Service Active")
-                        
-                        # Display stats
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.metric("PDF Files", stats.get('total_pdf_files', 0))
-                        with col2:
-                            st.metric("Total Size", f"{stats.get('total_size_mb', 0):.1f} MB")
-                        
-                        # PDF Browser
-                        with st.expander("📁 Browse PDF Files", expanded=False):
-                            try:
-                                pdf_files = chatbot.list_available_pdfs()
-                                
-                                if pdf_files:
-                                    selected_pdf = st.selectbox(
-                                        "Select PDF to download:",
-                                        [pdf['filename'] for pdf in pdf_files],
-                                        key="pdf_selector"
-                                    )
-                                    
-                                    if selected_pdf:
-                                        # Find selected PDF info
-                                        pdf_info = next((pdf for pdf in pdf_files if pdf['filename'] == selected_pdf), None)
-                                        
-                                        if pdf_info:
-                                            st.write(f"**Size:** {pdf_info.get('size_mb', 0):.1f} MB")
-                                            
-                                            # Create unique key for generate button
-                                            generate_key = f"generate_link_{hash(selected_pdf)}_{int(time.time())}"
-                                            if st.button("📥 Generate Download Link", key=generate_key):
-                                                with st.spinner("Generating secure link..."):
-                                                    download_url = chatbot.generate_pdf_download_url(selected_pdf, expiry_hours=2)
-                                                    
-                                                    if download_url:
-                                                        st.success("✅ Link generated!")
-                                                        st.code(download_url, language=None)
-                                                        st.warning("⚠️ Expires in 2 hours")
-                                                        
-                                                        # Also provide a direct link
-                                                        st.markdown(f"[🔗 Click to Download]({download_url})")
-                                                    else:
-                                                        st.error("❌ Failed to generate link")
-                                else:
-                                    st.info("No PDF files found")
-                                    
-                            except Exception as e:
-                                st.error(f"Error accessing files: {str(e)}")
-                        
-                        # Container info
-                        st.caption(f"Container: {stats.get('container_name', 'Unknown')}")
-                        st.caption(f"Folder: {stats.get('folder_path', 'root')}")
-                        
-                    else:
-                        st.error("❌ Service Unavailable")
-                        st.caption(f"Reason: {stats.get('reason', 'Unknown')}")
-                        
-                        if 'error' in stats:
-                            with st.expander("Error Details"):
-                                st.code(stats['error'])
-                
-                except Exception as e:
-                    st.error("❌ Service Error")
-                    st.caption(f"Error: {str(e)}")
-            
-            else:
-                st.warning("⚠️ Azure Service Not Available")
-                st.caption("Check Azure configuration in .env file")
-                
-                # Show configuration status
-                with st.expander("Configuration Status"):
-                    # Get config from environment variables directly
-                    azure_account_name = os.getenv('AZURE_STORAGE_ACCOUNT_NAME')
-                    azure_container_name = os.getenv('AZURE_STORAGE_CONTAINER_NAME') 
-                    azure_connection_string = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
-                    azure_account_key = os.getenv('AZURE_STORAGE_ACCOUNT_KEY')
-                    
-                    st.write("**Required Settings:**")
-                    st.write(f"- Account Name: {'✅' if azure_account_name else '❌'}")
-                    st.write(f"- Container: {'✅' if azure_container_name else '❌'}")
-                    st.write(f"- Connection String: {'✅' if azure_connection_string else '❌'}")
-                    st.write(f"- Account Key: {'✅' if azure_account_key else '❌'}")
-                    
-                    # Show actual values (partially hidden for security)
-                    if azure_account_name:
-                        st.caption(f"Account: {azure_account_name}")
-                    if azure_container_name:
-                        st.caption(f"Container: {azure_container_name}")
-                    if azure_connection_string:
-                        st.caption(f"Connection String: {azure_connection_string[:30]}...")
-                    if azure_account_key:
-                        st.caption(f"Account Key: {azure_account_key[:10]}...")
-                    
-                    st.info("💡 Fill in Azure credentials in .env file to enable downloads")
-        
-        else:
-            st.info("ℹ️ Waiting for system initialization...")
+    """Display Azure download service status (removed from sidebar, now only available in source info)"""
+    # Azure service status is now only shown in chat responses through source information
+    # This keeps the sidebar clean and modern like Gemini
+    pass
 
 def display_chat_message(message):
-    """Display a chat message with proper styling"""
+    """Display a chat message with modern Gemini-like styling"""
     role = message["role"]
     content = message["content"]
     
     if role == "user":
         st.markdown(f"""
         <div class="chat-message user-message">
-            <strong>👤 You:</strong><br>
-            {content}
+            <div style="display: flex; align-items: center; margin-bottom: 0.5rem;">
+                <div style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; margin-right: 0.75rem;">
+                    👤
+                </div>
+                <strong style="color: #1565c0;">You</strong>
+            </div>
+            <div style="margin-left: 2.5rem; font-size: 1rem; line-height: 1.6;">
+                {content}
+            </div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -529,85 +465,172 @@ def display_chat_message(message):
             chunks_used = content.get('chunks_used', 0)
             confidence = content.get('confidence', 0)
             response_time = content.get('response_time', 0)
+            reasoning = content.get('reasoning', '')
+            model_used = content.get('model_used', 'unknown')
+            reasoning_quality = content.get('reasoning_quality', 'medium')
         else:
             response_text = str(content)
             sources = []
             chunks_used = 0
             confidence = 0
             response_time = 0
+            reasoning = ''
+            model_used = 'unknown'
+            reasoning_quality = 'medium'
         
-        # Clean response text from any HTML tags before display
+        # Clean response text
         import re
-        clean_response_text = re.sub(r'<[^>]+>', '', response_text)  # Remove HTML tags
-        clean_response_text = re.sub(r'</?\w+[^>]*>', '', clean_response_text)  # Extra cleaning
+        clean_response_text = re.sub(r'<[^>]+>', '', response_text)
         clean_response_text = clean_response_text.replace('&nbsp;', ' ').replace('&amp;', '&')
-        clean_response_text = ' '.join(clean_response_text.split())  # Normalize whitespace
+        clean_response_text = ' '.join(clean_response_text.split())
         
-        # Display main response
+        # Display main AI response
         st.markdown(f"""
         <div class="chat-message ai-message">
-            <strong>🤖 AI Assistant:</strong><br>
-            {clean_response_text}
+            <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+                <div style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; margin-right: 0.75rem;">
+                    🤖
+                </div>
+                <strong style="color: #2e7d32;">Edify AI</strong>
+                <div style="margin-left: auto; font-size: 0.8rem; color: #666;">
+                    <span class="quality-{reasoning_quality}">{model_used}</span>
+                </div>
+            </div>
+            <div style="margin-left: 2.5rem; font-size: 1rem; line-height: 1.7;">
+                {clean_response_text}
+            </div>
         </div>
         """, unsafe_allow_html=True)
         
-        # Display source information
+        # Display advanced reasoning if available
+        if reasoning:
+            with st.expander("🧠 **Advanced AI Reasoning Process**", expanded=False):
+                quality_icons = {
+                    'high': '🟢 High Quality',
+                    'medium': '🟡 Medium Quality', 
+                    'low': '🔴 Basic Quality'
+                }
+                quality_display = quality_icons.get(reasoning_quality, '🟡 Medium Quality')
+                
+                st.markdown(f"""
+                <div class="reasoning-section">
+                    <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+                        <div style="font-size: 1.1rem; font-weight: 600; color: #f57c00;">
+                            ⚡ How I Analyzed Your Question
+                        </div>
+                        <div style="margin-left: auto; font-size: 0.85rem;">
+                            {quality_display}
+                        </div>
+                    </div>
+                    <div style="background: rgba(255,152,0,0.1); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                        <strong>🔍 Model:</strong> {model_used}<br>
+                        <strong>⏱️ Processing:</strong> {response_time:.2f}s<br>
+                        <strong>📊 Context:</strong> {chunks_used} relevant chunks
+                    </div>
+                    <div style="font-size: 0.95rem; line-height: 1.6; color: #424242;">
+                        {reasoning}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Display source information with download functionality
         if sources or chunks_used > 0:
-            with st.expander("📚 Source Information", expanded=False):
-                col1, col2, col3 = st.columns(3)
+            with st.expander(f"📚 **Source Evidence** ({len(sources)} documents)", expanded=False):
+                # Performance metrics
+                col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
-                    st.metric("Chunks Used", chunks_used)
-                with col2:
-                    st.metric("Confidence", f"{confidence:.2f}")
-                with col3:
-                    st.metric("Response Time", f"{response_time:.2f}s")
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div style="font-size: 1.2rem; font-weight: 600; color: #6366f1;">{chunks_used}</div>
+                        <div style="font-size: 0.8rem; color: #64748b;">Chunks Used</div>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
+                with col2:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div style="font-size: 1.2rem; font-weight: 600; color: #10b981;">{confidence:.2f}</div>
+                        <div style="font-size: 0.8rem; color: #64748b;">Confidence</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col3:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div style="font-size: 1.2rem; font-weight: 600; color: #f59e0b;">{response_time:.2f}s</div>
+                        <div style="font-size: 0.8rem; color: #64748b;">Response Time</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col4:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div style="font-size: 1.2rem; font-weight: 600; color: #ef4444;">{len(sources)}</div>
+                        <div style="font-size: 0.8rem; color: #64748b;">Sources</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Source documents with download functionality
                 if sources:
-                    st.subheader("📄 Source Documents")
-                    # Use timestamp to ensure unique keys across different queries
-                    timestamp = int(time.time() * 1000)  # milliseconds for uniqueness
+                    st.markdown("### 📄 Source Documents")
+                    timestamp = int(time.time() * 1000)
                     
                     for i, source in enumerate(sources, 1):
-                        with st.container():
-                            # Create columns for source info and download
-                            col_info, col_download = st.columns([3, 1])
-                            
-                            with col_info:
-                                st.write(f"**{i}. {source.get('filename', 'Unknown')}**")
-                                st.write(f"   - Relevance: {source.get('relevance_score', 0):.3f}")
-                                st.write(f"   - Method: {source.get('extraction_method', 'Unknown')}")
+                        st.markdown(f"""
+                        <div class="source-container">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+                                <div style="font-weight: 600; color: #374151; font-size: 1rem;">
+                                    📋 {i}. {source.get('filename', 'Unknown Document')}
+                                </div>
+                                <div style="font-size: 0.85rem; color: #6b7280;">
+                                    Relevance: {source.get('relevance_score', 0):.3f}
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Document details
+                        col_info, col_download = st.columns([3, 1])
+                        
+                        with col_info:
+                            st.markdown(f"""
+                            <div style="font-size: 0.9rem; color: #6b7280; margin-left: 1rem;">
+                                📊 Method: {source.get('extraction_method', 'Unknown')}<br>
+                                {f"📏 Size: {source.get('file_size_mb', 0):.1f} MB<br>" if source.get('file_size_mb') else ''}
+                                {f"📄 Pages: {source.get('total_pages', 0)}<br>" if source.get('total_pages') else ''}
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with col_download:
+                            # Download functionality - only show if available
+                            if source.get('download_available') and source.get('download_url'):
+                                st.success("✅ Available")
                                 
-                                # Additional file info if available
-                                if source.get('file_size_mb'):
-                                    st.write(f"   - Size: {source.get('file_size_mb'):.1f} MB")
-                                if source.get('total_pages'):
-                                    st.write(f"   - Pages: {source.get('total_pages')}")
-                            
-                            with col_download:
-                                # Download functionality
-                                if source.get('download_available') and source.get('download_url'):
-                                    st.success("✅ Available")
-                                    
-                                    # Download button with unique key
-                                    unique_key = f"download_{timestamp}_{i}_{hash(source.get('filename', 'unknown'))}"
-                                    if st.button(f"📥 Download", key=unique_key, help="Download original PDF"):
-                                        st.success("🔗 Download Link Generated!")
-                                        st.code(source['download_url'], language=None)
-                                        st.warning("⚠️ Link expires in 2 hours for security")
-                                    
-                                    # Direct link
-                                    st.markdown(f"[🔗 Direct Link]({source['download_url']})", unsafe_allow_html=True)
-                                    
-                                elif source.get('filename', 'Unknown') != 'Unknown':
-                                    st.warning("⚠️ Not Available")
-                                    st.caption("File not in storage")
-                                else:
-                                    st.info("ℹ️ Info Only")
-                            
-                            # Add separator between sources
-                            if i < len(sources):
-                                st.divider()
+                                unique_key = f"download_{timestamp}_{i}_{hash(source.get('filename', 'unknown'))}"
+                                if st.button("📥", key=unique_key, help="Download PDF", use_container_width=True):
+                                    st.success("🔗 **Download Generated!**")
+                                    st.code(source['download_url'], language=None)
+                                    st.warning("⚠️ **Expires in 2 hours**")
+                                
+                                # Direct download link
+                                st.markdown(f"""
+                                <a href="{source['download_url']}" target="_blank" style="text-decoration: none;">
+                                    <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 0.4rem; border-radius: 6px; text-align: center; font-size: 0.8rem; font-weight: 500;">
+                                        🔗 Download
+                                    </div>
+                                </a>
+                                """, unsafe_allow_html=True)
+                                
+                            elif source.get('filename', 'Unknown') != 'Unknown':
+                                st.warning("⚠️ Not Available")
+                                st.caption("File not in storage")
+                            else:
+                                st.info("ℹ️ Reference Only")
+                        
+                        st.markdown("</div>", unsafe_allow_html=True)
+                        
+                        if i < len(sources):
+                            st.divider()
 
 def process_user_query(user_input: str, components: Dict):
     """Process user query and return response"""
@@ -669,6 +692,10 @@ def process_user_query(user_input: str, components: Dict):
                                 chatbot_response['response'] = llm_result['response']
                                 chatbot_response['llm_enhanced'] = True
                                 chatbot_response['model_used'] = llm_result.get('model_used', 'unknown')
+                                # Pass through reasoning and other LLM data
+                                chatbot_response['reasoning'] = llm_result.get('reasoning', '')
+                                chatbot_response['reasoning_quality'] = llm_result.get('reasoning_quality', 'medium')
+                                chatbot_response['llm_response_time'] = llm_result.get('response_time', 0)
                             else:
                                 # Keep original chatbot response if LLM fails
                                 chatbot_response['llm_enhanced'] = False
@@ -729,23 +756,54 @@ def process_user_query(user_input: str, components: Dict):
         }
 
 def display_example_queries():
-    """Display example queries for user guidance"""
+    """Display modern example queries for user guidance"""
     with st.sidebar:
-        st.header("💡 Example Questions")
+        st.markdown("""
+        <div class="sidebar-section">
+            <h3 style="margin-bottom: 1rem; color: #374151;">💡 Try These Questions</h3>
+            <p style="font-size: 0.9rem; color: #6b7280; margin-bottom: 1rem;">
+                Click any example to get started with our AI assistant
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
         
         examples = [
-            "What is formative assessment?",
-            "How does summative assessment work?",
-            "What are different types of evaluation?",
-            "Tell me about assessment strategies",
-            "How to implement effective testing?"
+            {
+                "question": "What is formative assessment?",
+                "icon": "📊",
+                "category": "Assessment"
+            },
+            {
+                "question": "How does summative assessment work?",
+                "icon": "✅",
+                "category": "Evaluation"
+            },
+            {
+                "question": "What are different types of evaluation?",
+                "icon": "📝",
+                "category": "Methods"
+            },
+            {
+                "question": "Tell me about assessment strategies",
+                "icon": "🎯",
+                "category": "Strategy"
+            },
+            {
+                "question": "How to implement effective testing?",
+                "icon": "⚡",
+                "category": "Implementation"
+            }
         ]
         
-        st.markdown("Click any example to try it:")
-        
-        for example in examples:
-            if st.button(f"💬 {example}", key=f"example_{hash(example)}"):
-                st.session_state.example_query = example
+        for i, example in enumerate(examples):
+            unique_key = f"example_{i}_{hash(example['question'])}"
+            if st.button(
+                f"{example['icon']} {example['question']}", 
+                key=unique_key,
+                help=f"Category: {example['category']}",
+                use_container_width=True
+            ):
+                st.session_state.example_query = example['question']
                 st.rerun()
 
 def main():

@@ -62,11 +62,12 @@ class LLMService:
             # Try Gemini API first (Primary)
             if self.gemini_available:
                 self.logger.info("🌟 Trying Gemini AI API...")
-                response = self._call_gemini_api(query, context, conversation_history)
-                if response:
-                    self.logger.info(f"✅ Gemini AI successful: {response[:100]}...")
+                response_data = self._call_gemini_api(query, context, conversation_history)
+                if response_data:
+                    self.logger.info(f"✅ Gemini AI successful: {response_data['response'][:100]}...")
                     return {
-                        'response': response,
+                        'response': response_data['response'],
+                        'reasoning': response_data.get('reasoning', ''),
                         'model_used': 'gemini-2.0-flash',
                         'reasoning_quality': 'high',
                         'response_time': time.time() - start_time,
@@ -78,11 +79,12 @@ class LLMService:
             # Try OpenRouter API (Fallback)
             if self.openrouter_available:
                 self.logger.info("🌐 Trying OpenRouter API...")
-                response = self._call_openrouter_api(query, context, conversation_history)
-                if response:
-                    self.logger.info(f"✅ OpenRouter API successful: {response[:100]}...")
+                response_data = self._call_openrouter_api(query, context, conversation_history)
+                if response_data:
+                    self.logger.info(f"✅ OpenRouter API successful: {response_data['response'][:100]}...")
                     return {
-                        'response': response,
+                        'response': response_data['response'],
+                        'reasoning': response_data.get('reasoning', ''),
                         'model_used': 'openrouter',
                         'reasoning_quality': 'high',
                         'response_time': time.time() - start_time,
@@ -96,7 +98,8 @@ class LLMService:
             fallback_response = self._generate_intelligent_fallback_response(query, context)
             
             return {
-                'response': fallback_response,
+                'response': fallback_response['response'],
+                'reasoning': fallback_response.get('reasoning', ''),
                 'model_used': 'intelligent_fallback',
                 'reasoning_quality': 'medium',
                 'response_time': time.time() - start_time,
@@ -107,24 +110,36 @@ class LLMService:
             self.logger.error(f"❌ Response generation error: {str(e)}")
             return {
                 'response': f"I encountered an error generating the response. Please try rephrasing your question.",
+                'reasoning': f"Error occurred during processing: {str(e)}",
                 'model_used': 'error_handler',
                 'reasoning_quality': 'low',
                 'response_time': time.time() - start_time,
                 'error': str(e)
             }
     
-    def _call_gemini_api(self, query: str, context: str, conversation_history: List = None) -> Optional[str]:
-        """Call Gemini AI API"""
+    def _call_gemini_api(self, query: str, context: str, conversation_history: List = None) -> Optional[Dict]:
+        """Call Gemini AI API with reasoning"""
         try:
             # Build conversation context
-            system_prompt = """You are an intelligent educational assistant. Based on the provided context from educational documents, answer the user's question clearly and accurately. 
+            system_prompt = """You are an advanced AI educational assistant with sophisticated analytical capabilities. Your responses should demonstrate deep thinking similar to cutting-edge AI systems.
+
+When answering questions, provide comprehensive reasoning that shows:
+1. **Question Analysis**: Break down what the user is asking
+2. **Context Evaluation**: Assess the relevance and quality of provided information  
+3. **Information Synthesis**: Connect different pieces of information logically
+4. **Critical Thinking**: Consider multiple angles and potential limitations
+5. **Conclusion Formation**: Explain how you arrive at your final answer
 
 Instructions:
-1. Use ONLY the information provided in the context
-2. Give clear, concise, and helpful answers
-3. If the question is about holidays, lists, or schedules, organize the information properly
-4. Be conversational but professional
-5. If context doesn't contain the answer, say so honestly
+- Use ONLY the information provided in the context
+- Be thorough in your reasoning but concise in your final answer
+- Show your analytical process clearly
+- If context is insufficient, explain what's missing
+
+Format your response as:
+**Reasoning:** [Provide detailed step-by-step analysis: Question understanding → Context analysis → Information synthesis → Critical evaluation → Conclusion formation]
+
+**Answer:** [Your comprehensive final answer based on the context]
 
 Context from educational documents:
 """
@@ -135,7 +150,7 @@ Context from educational documents:
 
 User Question: {query}
 
-Answer based on the context above:"""
+Please provide your reasoning and answer:"""
             
             # Prepare request payload for Gemini
             payload = {
@@ -174,9 +189,30 @@ Answer based on the context above:"""
                         if len(text_parts) > 0 and 'text' in text_parts[0]:
                             generated_text = text_parts[0]['text'].strip()
                             
+                            # Parse reasoning and answer
+                            reasoning = ""
+                            answer = ""
+                            
+                            if "**Reasoning:**" in generated_text and "**Answer:**" in generated_text:
+                                parts = generated_text.split("**Answer:**")
+                                if len(parts) == 2:
+                                    reasoning = parts[0].replace("**Reasoning:**", "").strip()
+                                    answer = parts[1].strip()
+                                else:
+                                    # Fallback if parsing fails
+                                    answer = generated_text
+                                    reasoning = "Generated response using Gemini AI analysis of the provided context."
+                            else:
+                                # If no explicit reasoning format, treat whole response as answer
+                                answer = generated_text
+                                reasoning = "Generated response using Gemini AI analysis of the provided context."
+                            
                             # Validate response quality
-                            if self._is_valid_response(generated_text, query):
-                                return generated_text
+                            if self._is_valid_response(answer, query):
+                                return {
+                                    'response': answer,
+                                    'reasoning': reasoning
+                                }
                             else:
                                 self.logger.warning("⚠️ Gemini response failed validation")
                                 return None
@@ -196,11 +232,23 @@ Answer based on the context above:"""
             self.logger.warning(f"⚠️ Gemini API error: {str(e)}")
             return None
     
-    def _call_openrouter_api(self, query: str, context: str, conversation_history: List = None) -> Optional[str]:
-        """Call OpenRouter API as fallback"""
+    def _call_openrouter_api(self, query: str, context: str, conversation_history: List = None) -> Optional[Dict]:
+        """Call OpenRouter API as fallback with reasoning"""
         try:
-            system_prompt = "You are a helpful educational assistant. Answer based on the provided context."
-            user_prompt = f"Context: {context}\n\nQuestion: {query}\n\nAnswer:"
+            system_prompt = """You are an advanced AI assistant with sophisticated reasoning capabilities. Demonstrate comprehensive analytical thinking in your responses.
+
+Provide detailed reasoning that includes:
+1. **Understanding**: What is the user asking and why?
+2. **Analysis**: How do I evaluate the provided context?
+3. **Synthesis**: What connections can I make between different information pieces?
+4. **Evaluation**: What are the strengths and limitations of this information?
+5. **Conclusion**: How do I arrive at the best possible answer?
+
+Format your response as:
+**Reasoning:** [Show your complete analytical process step-by-step, demonstrating how you think through the problem]
+**Answer:** [Your final comprehensive answer]"""
+            
+            user_prompt = f"Context: {context}\n\nQuestion: {query}\n\nProvide reasoning and answer:"
             
             for model_name in self.openrouter_models.values():
                 try:
@@ -230,8 +278,28 @@ Answer based on the context above:"""
                         result = response.json()
                         if 'choices' in result and len(result['choices']) > 0:
                             content = result['choices'][0]['message']['content']
-                            if self._is_valid_response(content, query):
-                                return content
+                            
+                            # Parse reasoning and answer
+                            reasoning = ""
+                            answer = ""
+                            
+                            if "**Reasoning:**" in content and "**Answer:**" in content:
+                                parts = content.split("**Answer:**")
+                                if len(parts) == 2:
+                                    reasoning = parts[0].replace("**Reasoning:**", "").strip()
+                                    answer = parts[1].strip()
+                                else:
+                                    answer = content
+                                    reasoning = f"Generated response using {model_name} analysis of the provided context."
+                            else:
+                                answer = content
+                                reasoning = f"Generated response using {model_name} analysis of the provided context."
+                            
+                            if self._is_valid_response(answer, query):
+                                return {
+                                    'response': answer,
+                                    'reasoning': reasoning
+                                }
                     
                 except Exception as e:
                     self.logger.warning(f"⚠️ OpenRouter model {model_name} failed: {str(e)}")
@@ -243,7 +311,7 @@ Answer based on the context above:"""
             self.logger.error(f"❌ OpenRouter API call failed: {str(e)}")
             return None
     
-    def _generate_intelligent_fallback_response(self, query: str, context: str) -> str:
+    def _generate_intelligent_fallback_response(self, query: str, context: str) -> Dict:
         """Generate intelligent fallback response when APIs are unavailable"""
         try:
             self.logger.info("🔄 Using enhanced fallback response generation")
@@ -264,9 +332,12 @@ Answer based on the context above:"""
                 
         except Exception as e:
             self.logger.error(f"❌ Fallback response generation failed: {str(e)}")
-            return "I found some information but couldn't process it properly. Please try rephrasing your question."
+            return {
+                'response': "I found some information but couldn't process it properly. Please try rephrasing your question.",
+                'reasoning': f"Fallback processing failed due to error: {str(e)}"
+            }
     
-    def _generate_holiday_response(self, context: str, query: str) -> str:
+    def _generate_holiday_response(self, context: str, query: str) -> Dict:
         """Generate specific response for holiday queries"""
         try:
             # Extract holiday information from context
@@ -283,22 +354,39 @@ Answer based on the context above:"""
                     if len(clean_line) > 10:
                         holiday_info.append(clean_line)
             
+            reasoning = f"I searched through the school calendar and academic documents to find holiday information. I found {len(holiday_info)} relevant references to holidays and staff schedules."
+            
             if holiday_info:
                 if 'which day' in query.lower() or 'what day' in query.lower():
-                    return f"Based on the school calendar, Second Saturday is a holiday for all school staff. The school follows a proper work schedule that includes Second Saturday holidays as mentioned in the academic calendar."
+                    return {
+                        'response': "Based on the school calendar, Second Saturday is a holiday for all school staff. The school follows a proper work schedule that includes Second Saturday holidays as mentioned in the academic calendar.",
+                        'reasoning': reasoning + " I specifically looked for day-related holiday information and found details about Second Saturday holidays."
+                    }
                 elif 'second saturday' in query.lower():
-                    return "Yes, Second Saturday is a holiday for school staff. The school maintains a proper work schedule that includes Second Saturday holidays along with other scheduled holidays throughout the academic year."
+                    return {
+                        'response': "Yes, Second Saturday is a holiday for school staff. The school maintains a proper work schedule that includes Second Saturday holidays along with other scheduled holidays throughout the academic year.",
+                        'reasoning': reasoning + " I focused on Second Saturday specific information found in the staff work schedule documentation."
+                    }
                 else:
                     response = "According to the school's academic calendar, all teaching and non-teaching staff are entitled to holidays including Varalakshmi Vratham and other scheduled holidays. "
                     response += "The academic year holiday list includes various festivals and observances for all school staff members."
-                    return response
+                    return {
+                        'response': response,
+                        'reasoning': reasoning + " I compiled general holiday information from the academic calendar covering all staff categories."
+                    }
             
-            return "Based on the school documents, there are scheduled holidays for all school staff members as per the academic calendar."
+            return {
+                'response': "Based on the school documents, there are scheduled holidays for all school staff members as per the academic calendar.",
+                'reasoning': "I searched through available school documents but found limited specific holiday details, so I provided general information about staff holidays."
+            }
             
         except Exception as e:
-            return "The school has scheduled holidays for all staff members as outlined in the academic calendar."
+            return {
+                'response': "The school has scheduled holidays for all staff members as outlined in the academic calendar.",
+                'reasoning': f"Error occurred while processing holiday information: {str(e)}. Provided general holiday information as fallback."
+            }
     
-    def _generate_assessment_response(self, context: str, query: str) -> str:
+    def _generate_assessment_response(self, context: str, query: str) -> Dict:
         """Generate specific response for assessment queries"""
         try:
             context_sentences = context.split('.')
@@ -313,22 +401,42 @@ Answer based on the context above:"""
                     if len(clean_sentence) > 20:
                         relevant_sentences.append(clean_sentence)
             
+            reasoning = f"I analyzed the educational documents and found {len(relevant_sentences)} sentences containing assessment-related terms. I filtered and processed this information to provide specific details about evaluation methods."
+            
             if relevant_sentences:
                 if 'formative' in query.lower():
-                    return f"Formative assessment is assessment for learning that provides information to plan the next stage in learning. {relevant_sentences[0][:200]}..."
+                    return {
+                        'response': f"Formative assessment is assessment for learning that provides information to plan the next stage in learning. {relevant_sentences[0][:200]}...",
+                        'reasoning': reasoning + " I focused specifically on formative assessment information found in the educational guidelines."
+                    }
                 elif 'summative' in query.lower():
-                    return f"Summative assessment is the culmination of the teaching and learning process. {relevant_sentences[0][:200]}..."
+                    return {
+                        'response': f"Summative assessment is the culmination of the teaching and learning process. {relevant_sentences[0][:200]}...",
+                        'reasoning': reasoning + " I extracted summative assessment details from the teaching methodology documentation."
+                    }
                 elif 'types' in query.lower() or 'different' in query.lower():
-                    return f"There are different types of evaluation including formative assessment (assessment for learning) and summative assessment. {relevant_sentences[0][:150]}..."
+                    return {
+                        'response': f"There are different types of evaluation including formative assessment (assessment for learning) and summative assessment. {relevant_sentences[0][:150]}...",
+                        'reasoning': reasoning + " I compiled information about different assessment types from the educational framework documents."
+                    }
                 else:
-                    return f"Based on the educational documents: {relevant_sentences[0][:250]}..."
+                    return {
+                        'response': f"Based on the educational documents: {relevant_sentences[0][:250]}...",
+                        'reasoning': reasoning + " I provided the most relevant assessment information from the available educational resources."
+                    }
             
-            return "Assessment strategies include various methods for evaluating student learning and progress as outlined in the educational documents."
+            return {
+                'response': "Assessment strategies include various methods for evaluating student learning and progress as outlined in the educational documents.",
+                'reasoning': "I searched through educational documents but found limited specific assessment details, so I provided general information about assessment strategies."
+            }
             
         except Exception as e:
-            return "Assessment involves various strategies for evaluating and supporting student learning."
+            return {
+                'response': "Assessment involves various strategies for evaluating and supporting student learning.",
+                'reasoning': f"Error occurred while processing assessment information: {str(e)}. Provided general assessment information as fallback."
+            }
     
-    def _generate_general_response(self, context: str, query: str) -> str:
+    def _generate_general_response(self, context: str, query: str) -> Dict:
         """Generate general response from context"""
         try:
             # Extract most relevant sentences from context
@@ -349,18 +457,32 @@ Answer based on the context above:"""
                     clean_sentence = ' '.join(clean_sentence.split())
                     relevant_sentences.append((overlap, clean_sentence))
             
+            reasoning = f"I analyzed {len(context_sentences)} sentences from the documents and found {len(relevant_sentences)} relevant matches based on word overlap with your query."
+            
             if relevant_sentences:
                 # Sort by relevance and take the best
                 relevant_sentences.sort(key=lambda x: x[0], reverse=True)
                 best_sentence = relevant_sentences[0][1]
+                best_score = relevant_sentences[0][0]
+                
+                reasoning += f" The best match had {best_score} overlapping words with your question."
                 
                 # Generate a natural response
-                return f"Based on the documents: {best_sentence[:300]}..."
+                return {
+                    'response': f"Based on the documents: {best_sentence[:300]}...",
+                    'reasoning': reasoning
+                }
             
-            return "I found some information in the documents but couldn't extract a clear answer. Please try rephrasing your question."
+            return {
+                'response': "I found some information in the documents but couldn't extract a clear answer. Please try rephrasing your question.",
+                'reasoning': reasoning + " Unfortunately, no sentences had sufficient word overlap with your query to provide a confident answer."
+            }
             
         except Exception as e:
-            return "I found some relevant information but couldn't process it properly."
+            return {
+                'response': "I found some relevant information but couldn't process it properly.",
+                'reasoning': f"Error occurred during general response processing: {str(e)}"
+            }
     
     def _is_valid_response(self, response: str, query: str) -> bool:
         """Validate if the response is meaningful"""
