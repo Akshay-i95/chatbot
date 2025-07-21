@@ -438,7 +438,9 @@ def display_azure_service_status(components):
                                         if pdf_info:
                                             st.write(f"**Size:** {pdf_info.get('size_mb', 0):.1f} MB")
                                             
-                                            if st.button("📥 Generate Download Link", key="generate_link"):
+                                            # Create unique key for generate button
+                                            generate_key = f"generate_link_{hash(selected_pdf)}_{int(time.time())}"
+                                            if st.button("📥 Generate Download Link", key=generate_key):
                                                 with st.spinner("Generating secure link..."):
                                                     download_url = chatbot.generate_pdf_download_url(selected_pdf, expiry_hours=2)
                                                     
@@ -563,6 +565,9 @@ def display_chat_message(message):
                 
                 if sources:
                     st.subheader("📄 Source Documents")
+                    # Use timestamp to ensure unique keys across different queries
+                    timestamp = int(time.time() * 1000)  # milliseconds for uniqueness
+                    
                     for i, source in enumerate(sources, 1):
                         with st.container():
                             # Create columns for source info and download
@@ -584,8 +589,9 @@ def display_chat_message(message):
                                 if source.get('download_available') and source.get('download_url'):
                                     st.success("✅ Available")
                                     
-                                    # Download button
-                                    if st.button(f"📥 Download", key=f"download_{i}", help="Download original PDF"):
+                                    # Download button with unique key
+                                    unique_key = f"download_{timestamp}_{i}_{hash(source.get('filename', 'unknown'))}"
+                                    if st.button(f"📥 Download", key=unique_key, help="Download original PDF"):
                                         st.success("🔗 Download Link Generated!")
                                         st.code(source['download_url'], language=None)
                                         st.warning("⚠️ Link expires in 2 hours for security")
