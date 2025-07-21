@@ -39,6 +39,15 @@ logging.basicConfig(
 from dotenv import load_dotenv
 load_dotenv()
 
+# Force reload environment variables for Streamlit
+def reload_env():
+    """Force reload environment variables"""
+    load_dotenv(override=True)
+    return True
+
+# Call this to ensure fresh environment loading
+reload_env()
+
 # Custom CSS for professional styling
 def load_custom_css():
     st.markdown("""
@@ -213,7 +222,13 @@ def load_system_components():
             'min_similarity_threshold': float(os.getenv('MIN_SIMILARITY_THRESHOLD', '0.65')),
             'enable_citations': os.getenv('ENABLE_CITATIONS', 'true').lower() == 'true',
             'enable_context_expansion': os.getenv('ENABLE_CONTEXT_EXPANSION', 'false').lower() == 'true',
-            'max_context_length': int(os.getenv('MAX_CONTEXT_LENGTH', '2000'))
+            'max_context_length': int(os.getenv('MAX_CONTEXT_LENGTH', '2000')),
+            # Azure configuration for PDF downloads
+            'azure_connection_string': os.getenv('AZURE_STORAGE_CONNECTION_STRING'),
+            'azure_account_name': os.getenv('AZURE_STORAGE_ACCOUNT_NAME'),
+            'azure_account_key': os.getenv('AZURE_STORAGE_ACCOUNT_KEY'),
+            'azure_container_name': os.getenv('AZURE_STORAGE_CONTAINER_NAME'),
+            'azure_folder_path': os.getenv('AZURE_BLOB_FOLDER_PATH')
         }
         
         # Initialize Vector Database
@@ -355,7 +370,7 @@ def display_conversation_controls():
                 st.rerun()
         
         with col2:
-            if st.button("📊 Reset Stats", help="Reset session statistics"):
+            if st.button("� Reset Stats", help="Reset session statistics"):
                 st.session_state.stats = {
                     'total_queries': 0,
                     'successful_responses': 0,
@@ -363,6 +378,133 @@ def display_conversation_controls():
                     'session_start': datetime.now()
                 }
                 st.rerun()
+        
+        # Full width reload button
+        if st.button("�🔄 Reload System", help="Clear cache and reload components", use_container_width=True):
+            # Clear all caches
+            st.cache_resource.clear()
+            
+            # Force reload environment
+            reload_env()
+            
+            # Reset session state
+            for key in ['vector_db', 'chatbot', 'llm_service', 'system_status']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
+            st.success("System reloaded! Azure service should now work.")
+            st.rerun()
+
+def display_azure_service_status(components):
+    """Display Azure download service status and PDF browser"""
+    with st.sidebar:
+        st.header("📥 PDF Downloads")
+        
+        if components['status'] == 'ready' and components['chatbot']:
+            chatbot = components['chatbot']
+            
+            # Check if Azure service is available
+            if hasattr(chatbot, 'azure_service') and chatbot.azure_service:
+                # Get service statistics
+                try:
+                    stats = chatbot.get_download_service_stats()
+                    
+                    if stats.get('service_available'):
+                        st.success("✅ Azure Service Active")
+                        
+                        # Display stats
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("PDF Files", stats.get('total_pdf_files', 0))
+                        with col2:
+                            st.metric("Total Size", f"{stats.get('total_size_mb', 0):.1f} MB")
+                        
+                        # PDF Browser
+                        with st.expander("📁 Browse PDF Files", expanded=False):
+                            try:
+                                pdf_files = chatbot.list_available_pdfs()
+                                
+                                if pdf_files:
+                                    selected_pdf = st.selectbox(
+                                        "Select PDF to download:",
+                                        [pdf['filename'] for pdf in pdf_files],
+                                        key="pdf_selector"
+                                    )
+                                    
+                                    if selected_pdf:
+                                        # Find selected PDF info
+                                        pdf_info = next((pdf for pdf in pdf_files if pdf['filename'] == selected_pdf), None)
+                                        
+                                        if pdf_info:
+                                            st.write(f"**Size:** {pdf_info.get('size_mb', 0):.1f} MB")
+                                            
+                                            if st.button("📥 Generate Download Link", key="generate_link"):
+                                                with st.spinner("Generating secure link..."):
+                                                    download_url = chatbot.generate_pdf_download_url(selected_pdf, expiry_hours=2)
+                                                    
+                                                    if download_url:
+                                                        st.success("✅ Link generated!")
+                                                        st.code(download_url, language=None)
+                                                        st.warning("⚠️ Expires in 2 hours")
+                                                        
+                                                        # Also provide a direct link
+                                                        st.markdown(f"[🔗 Click to Download]({download_url})")
+                                                    else:
+                                                        st.error("❌ Failed to generate link")
+                                else:
+                                    st.info("No PDF files found")
+                                    
+                            except Exception as e:
+                                st.error(f"Error accessing files: {str(e)}")
+                        
+                        # Container info
+                        st.caption(f"Container: {stats.get('container_name', 'Unknown')}")
+                        st.caption(f"Folder: {stats.get('folder_path', 'root')}")
+                        
+                    else:
+                        st.error("❌ Service Unavailable")
+                        st.caption(f"Reason: {stats.get('reason', 'Unknown')}")
+                        
+                        if 'error' in stats:
+                            with st.expander("Error Details"):
+                                st.code(stats['error'])
+                
+                except Exception as e:
+                    st.error("❌ Service Error")
+                    st.caption(f"Error: {str(e)}")
+            
+            else:
+                st.warning("⚠️ Azure Service Not Available")
+                st.caption("Check Azure configuration in .env file")
+                
+                # Show configuration status
+                with st.expander("Configuration Status"):
+                    # Get config from environment variables directly
+                    azure_account_name = os.getenv('AZURE_STORAGE_ACCOUNT_NAME')
+                    azure_container_name = os.getenv('AZURE_STORAGE_CONTAINER_NAME') 
+                    azure_connection_string = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
+                    azure_account_key = os.getenv('AZURE_STORAGE_ACCOUNT_KEY')
+                    
+                    st.write("**Required Settings:**")
+                    st.write(f"- Account Name: {'✅' if azure_account_name else '❌'}")
+                    st.write(f"- Container: {'✅' if azure_container_name else '❌'}")
+                    st.write(f"- Connection String: {'✅' if azure_connection_string else '❌'}")
+                    st.write(f"- Account Key: {'✅' if azure_account_key else '❌'}")
+                    
+                    # Show actual values (partially hidden for security)
+                    if azure_account_name:
+                        st.caption(f"Account: {azure_account_name}")
+                    if azure_container_name:
+                        st.caption(f"Container: {azure_container_name}")
+                    if azure_connection_string:
+                        st.caption(f"Connection String: {azure_connection_string[:30]}...")
+                    if azure_account_key:
+                        st.caption(f"Account Key: {azure_account_key[:10]}...")
+                    
+                    st.info("💡 Fill in Azure credentials in .env file to enable downloads")
+        
+        else:
+            st.info("ℹ️ Waiting for system initialization...")
 
 def display_chat_message(message):
     """Display a chat message with proper styling"""
@@ -422,9 +564,44 @@ def display_chat_message(message):
                 if sources:
                     st.subheader("📄 Source Documents")
                     for i, source in enumerate(sources, 1):
-                        st.write(f"**{i}. {source.get('filename', 'Unknown')}**")
-                        st.write(f"   - Relevance: {source.get('relevance_score', 0):.3f}")
-                        st.write(f"   - Method: {source.get('extraction_method', 'Unknown')}")
+                        with st.container():
+                            # Create columns for source info and download
+                            col_info, col_download = st.columns([3, 1])
+                            
+                            with col_info:
+                                st.write(f"**{i}. {source.get('filename', 'Unknown')}**")
+                                st.write(f"   - Relevance: {source.get('relevance_score', 0):.3f}")
+                                st.write(f"   - Method: {source.get('extraction_method', 'Unknown')}")
+                                
+                                # Additional file info if available
+                                if source.get('file_size_mb'):
+                                    st.write(f"   - Size: {source.get('file_size_mb'):.1f} MB")
+                                if source.get('total_pages'):
+                                    st.write(f"   - Pages: {source.get('total_pages')}")
+                            
+                            with col_download:
+                                # Download functionality
+                                if source.get('download_available') and source.get('download_url'):
+                                    st.success("✅ Available")
+                                    
+                                    # Download button
+                                    if st.button(f"📥 Download", key=f"download_{i}", help="Download original PDF"):
+                                        st.success("🔗 Download Link Generated!")
+                                        st.code(source['download_url'], language=None)
+                                        st.warning("⚠️ Link expires in 2 hours for security")
+                                    
+                                    # Direct link
+                                    st.markdown(f"[🔗 Direct Link]({source['download_url']})", unsafe_allow_html=True)
+                                    
+                                elif source.get('filename', 'Unknown') != 'Unknown':
+                                    st.warning("⚠️ Not Available")
+                                    st.caption("File not in storage")
+                                else:
+                                    st.info("ℹ️ Info Only")
+                            
+                            # Add separator between sources
+                            if i < len(sources):
+                                st.divider()
 
 def process_user_query(user_input: str, components: Dict):
     """Process user query and return response"""
@@ -594,7 +771,14 @@ def main():
             display_system_status(components)
             display_session_stats()
             display_conversation_controls()
+            display_azure_service_status(components)
             display_example_queries()
+            
+            # Add cache clearing button for debugging
+            st.sidebar.markdown("---")
+            if st.sidebar.button("🔄 Clear Cache & Reload", help="Clear Streamlit cache and reload components"):
+                st.cache_resource.clear()
+                st.rerun()
         
         with col1:
             # Main chat interface

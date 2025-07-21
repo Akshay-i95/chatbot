@@ -8,6 +8,7 @@ This module provides:
 - Context optimization for LLM responses
 - Multi-turn conversation support
 - Response quality assessment
+- PDF download functionality via Azure Blob Storage
 """
 
 import os
@@ -18,6 +19,13 @@ import json
 from typing import List, Dict, Optional, Any, Tuple
 from datetime import datetime
 import re
+
+# Import Azure download service
+try:
+    from azure_blob_service import create_azure_download_service
+    AZURE_DOWNLOAD_AVAILABLE = True
+except ImportError:
+    AZURE_DOWNLOAD_AVAILABLE = False
 
 # Fix Windows Unicode issues
 if sys.platform.startswith('win'):
@@ -34,6 +42,9 @@ class AIChhatbotInterface:
     def __init__(self, vector_db_manager, config: Dict):
         """Initialize AI chatbot with enhanced vector retrieval"""
         try:
+            # Setup logging first
+            self.logger = logging.getLogger(__name__)
+            
             self.vector_db = vector_db_manager
             self.config = config
             
@@ -49,8 +60,42 @@ class AIChhatbotInterface:
             self.max_response_tokens = config.get('max_response_tokens', 1000)
             self.temperature = config.get('temperature', 0.7)
             
-            # Setup logging
-            self.logger = logging.getLogger(__name__)
+            # Initialize Azure download service
+            self.azure_service = None
+            if AZURE_DOWNLOAD_AVAILABLE:
+                try:
+                    self.logger.info("🔄 Initializing Azure download service...")
+                    
+                    # Debug: Log Azure configuration
+                    azure_config = {
+                        'azure_connection_string': config.get('azure_connection_string'),
+                        'azure_account_name': config.get('azure_account_name'),
+                        'azure_account_key': config.get('azure_account_key'),
+                        'azure_container_name': config.get('azure_container_name'),
+                        'azure_folder_path': config.get('azure_folder_path')
+                    }
+                    
+                    # Log config status (safely)
+                    self.logger.info(f"Azure Account Name: {'✅' if azure_config['azure_account_name'] else '❌'}")
+                    self.logger.info(f"Azure Container: {'✅' if azure_config['azure_container_name'] else '❌'}")
+                    self.logger.info(f"Azure Connection String: {'✅' if azure_config['azure_connection_string'] else '❌'}")
+                    self.logger.info(f"Azure Account Key: {'✅' if azure_config['azure_account_key'] else '❌'}")
+                    
+                    self.azure_service = create_azure_download_service(azure_config)
+                    if self.azure_service:
+                        self.logger.info("✅ Azure download service initialized successfully")
+                        
+                        # Test service
+                        stats = self.azure_service.get_download_stats()
+                        self.logger.info(f"📁 Found {stats.get('total_pdf_files', 0)} PDF files in Azure storage")
+                    else:
+                        self.logger.warning("⚠️ Azure download service initialization returned None")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Azure download service initialization failed: {str(e)}")
+                    import traceback
+                    self.logger.debug(traceback.format_exc())
+            else:
+                self.logger.warning("⚠️ Azure Storage SDK not available for download functionality")
             
             # Conversation state
             self.conversation_history = []
@@ -518,7 +563,7 @@ Context format: Each section begins with [Source: filename, Section X] followed 
             return 0.5  # Default confidence
     
     def _format_sources(self, chunks: List[Dict]) -> List[Dict]:
-        """Format source information for response"""
+        """Format source information for response with download URLs"""
         try:
             sources = []
             seen_sources = set()
@@ -528,13 +573,41 @@ Context format: Each section begins with [Source: filename, Section X] followed 
                 filename = metadata.get('filename', 'unknown')
                 
                 if filename not in seen_sources:
-                    sources.append({
+                    source_info = {
                         'filename': filename,
                         'total_pages': metadata.get('file_pages', 0),
                         'extraction_method': metadata.get('extraction_method', 'unknown'),
                         'ocr_used': metadata.get('ocr_used', False),
-                        'relevance_score': chunk.get('similarity_score', 0)
-                    })
+                        'relevance_score': chunk.get('similarity_score', 0),
+                        'download_url': None,
+                        'download_available': False,
+                        'file_size_mb': None
+                    }
+                    
+                    # Generate download URL if Azure service is available
+                    if self.azure_service and filename != 'unknown':
+                        try:
+                            # Get blob info first
+                            blob_info = self.azure_service.get_blob_info(filename)
+                            if blob_info and blob_info.get('exists'):
+                                # Generate download URL
+                                download_url = self.azure_service.generate_download_url(filename, expiry_hours=2)
+                                if download_url:
+                                    source_info.update({
+                                        'download_url': download_url,
+                                        'download_available': True,
+                                        'file_size_mb': blob_info.get('size_mb'),
+                                        'last_modified': blob_info.get('last_modified')
+                                    })
+                                    self.logger.info(f"✅ Generated download URL for: {filename}")
+                                else:
+                                    self.logger.warning(f"⚠️ Failed to generate download URL for: {filename}")
+                            else:
+                                self.logger.warning(f"⚠️ File not found in Azure storage: {filename}")
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Error generating download URL for {filename}: {str(e)}")
+                    
+                    sources.append(source_info)
                     seen_sources.add(filename)
             
             return sources
@@ -637,6 +710,118 @@ Context format: Each section begins with [Source: filename, Section X] followed 
         """Reset conversation history"""
         self.conversation_history = []
         self.logger.info("🔄 Conversation history reset")
+    
+    def generate_pdf_download_url(self, filename: str, expiry_hours: int = 2) -> Optional[str]:
+        """
+        Generate a secure download URL for a specific PDF file
+        
+        Args:
+            filename: Name of the PDF file
+            expiry_hours: Hours until the download URL expires (default: 2 hours)
+            
+        Returns:
+            Secure download URL or None if not available
+        """
+        try:
+            if not self.azure_service:
+                self.logger.warning("⚠️ Azure download service not available")
+                return None
+            
+            download_url = self.azure_service.generate_download_url(filename, expiry_hours)
+            
+            if download_url:
+                self.logger.info(f"✅ Generated download URL for: {filename}")
+            else:
+                self.logger.warning(f"⚠️ Could not generate download URL for: {filename}")
+            
+            return download_url
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generating download URL for {filename}: {str(e)}")
+            return None
+    
+    def get_pdf_info(self, filename: str) -> Optional[Dict]:
+        """
+        Get information about a PDF file in Azure storage
+        
+        Args:
+            filename: Name of the PDF file
+            
+        Returns:
+            Dictionary with file information or None if not available
+        """
+        try:
+            if not self.azure_service:
+                return None
+            
+            return self.azure_service.get_blob_info(filename)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error getting PDF info for {filename}: {str(e)}")
+            return None
+    
+    def list_available_pdfs(self) -> List[Dict]:
+        """
+        List all available PDF files in Azure storage
+        
+        Returns:
+            List of dictionaries with PDF file information
+        """
+        try:
+            if not self.azure_service:
+                self.logger.warning("⚠️ Azure download service not available")
+                return []
+            
+            return self.azure_service.list_available_pdfs()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error listing PDF files: {str(e)}")
+            return []
+    
+    def batch_generate_download_urls(self, filenames: List[str], expiry_hours: int = 2) -> Dict[str, Optional[str]]:
+        """
+        Generate download URLs for multiple PDF files at once
+        
+        Args:
+            filenames: List of PDF filenames
+            expiry_hours: Hours until the download URLs expire (default: 2 hours)
+            
+        Returns:
+            Dictionary mapping filenames to download URLs (or None if failed)
+        """
+        try:
+            if not self.azure_service:
+                self.logger.warning("⚠️ Azure download service not available")
+                return {filename: None for filename in filenames}
+            
+            return self.azure_service.batch_generate_download_urls(filenames, expiry_hours)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generating batch download URLs: {str(e)}")
+            return {filename: None for filename in filenames}
+    
+    def get_download_service_stats(self) -> Dict:
+        """
+        Get Azure download service statistics
+        
+        Returns:
+            Dictionary with service statistics
+        """
+        try:
+            if not self.azure_service:
+                return {
+                    'service_available': False,
+                    'reason': 'Azure download service not initialized'
+                }
+            
+            return self.azure_service.get_download_stats()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error getting download service stats: {str(e)}")
+            return {
+                'service_available': False,
+                'error': str(e)
+            }
 
 def main():
     """Run the AI Chatbot Interface as standalone application"""
@@ -648,6 +833,8 @@ def main():
         print("Type 'quit', 'exit', or 'bye' to end the session.")
         print("Type 'stats' to see session statistics.")
         print("Type 'reset' to clear conversation history.")
+        print("Type 'pdfs' to list available PDF files.")
+        print("Type 'download <filename>' to get a download link.")
         print("-" * 50)
         
         # Load configuration
@@ -664,7 +851,13 @@ def main():
             'enable_context_expansion': True,
             'max_context_length': 4000,
             'max_response_tokens': 1000,
-            'temperature': 0.7
+            'temperature': 0.7,
+            # Azure configuration from environment
+            'azure_connection_string': os.getenv('AZURE_STORAGE_CONNECTION_STRING'),
+            'azure_account_name': os.getenv('AZURE_STORAGE_ACCOUNT_NAME'),
+            'azure_account_key': os.getenv('AZURE_STORAGE_ACCOUNT_KEY'),
+            'azure_container_name': os.getenv('AZURE_STORAGE_CONTAINER_NAME'),
+            'azure_folder_path': os.getenv('AZURE_BLOB_FOLDER_PATH')
         }
         
         # Initialize components
@@ -705,6 +898,58 @@ def main():
                     print("\nConversation history cleared.")
                     continue
                 
+                elif user_input.lower() == 'pdfs':
+                    print("\n" + "=" * 40)
+                    print("AVAILABLE PDF FILES")
+                    print("=" * 40)
+                    
+                    pdfs = chatbot.list_available_pdfs()
+                    if pdfs:
+                        for i, pdf in enumerate(pdfs, 1):
+                            print(f"{i}. {pdf['filename']} ({pdf.get('size_mb', 0):.1f} MB)")
+                        
+                        # Show download service stats
+                        stats = chatbot.get_download_service_stats()
+                        if stats.get('service_available'):
+                            print(f"\nTotal: {stats.get('total_pdf_files', 0)} files, {stats.get('total_size_mb', 0):.1f} MB")
+                        else:
+                            print(f"\nDownload service: {stats.get('reason', 'Not available')}")
+                    else:
+                        print("No PDF files found or download service not available.")
+                    continue
+                
+                elif user_input.lower().startswith('download '):
+                    filename = user_input[9:].strip()  # Remove 'download ' prefix
+                    
+                    if not filename:
+                        print("Please specify a filename: download <filename>")
+                        continue
+                    
+                    print(f"\nGenerating download link for: {filename}")
+                    
+                    # Get file info first
+                    file_info = chatbot.get_pdf_info(filename)
+                    if file_info and file_info.get('exists'):
+                        # Generate download URL
+                        download_url = chatbot.generate_pdf_download_url(filename, expiry_hours=2)
+                        
+                        if download_url:
+                            print("\n" + "=" * 50)
+                            print("DOWNLOAD LINK GENERATED")
+                            print("=" * 50)
+                            print(f"File: {filename}")
+                            print(f"Size: {file_info.get('size_mb', 0):.1f} MB")
+                            print(f"Expires: 2 hours from now")
+                            print(f"\nDownload URL:")
+                            print(download_url)
+                            print("\n⚠️  This link expires in 2 hours for security.")
+                        else:
+                            print(f"❌ Failed to generate download link for: {filename}")
+                    else:
+                        print(f"❌ File not found: {filename}")
+                        print("Use 'pdfs' command to see available files.")
+                    continue
+                
                 # Process the query
                 print("\nAI: Searching for relevant information...")
                 
@@ -733,6 +978,14 @@ def main():
                     for i, source in enumerate(response['sources'][:3], 1):
                         relevance = source.get('relevance_score', source.get('similarity_score', 0))
                         print(f"  {i}. {source['filename']} (Relevance: {relevance:.2f})")
+                        
+                        # Show download info if available
+                        if source.get('download_available'):
+                            size_info = f" - {source.get('file_size_mb', 0):.1f} MB" if source.get('file_size_mb') else ""
+                            print(f"     📥 Download available{size_info}")
+                            print(f"     URL: {source['download_url']}")
+                        elif source['filename'] != 'unknown':
+                            print(f"     📄 File: {source['filename']} (download not available)")
                 
                 print(f"\nQuery Info: {response['chunks_used']} chunks used, "
                       f"Confidence: {response.get('confidence', 0):.2f}, "
